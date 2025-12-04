@@ -1,0 +1,106 @@
+min_filter:                                   
+  enable: True                                # weather to load this plugin
+  fill_nan: True                             # Fill nans to invalid cells of elevation layer.
+  is_height_layer: True                       # If this is a height layer (such as elevation) or not (such as traversability)
+  layer_name: "min_filter"                    # The layer name.
+  extra_params:                               # This params are passed to the plugin class on initialization.
+    dilation_size: 1                         # The patch size to apply (21x21 patch - very large for smoothing)
+    iteration_n: 15                           # The number of iterations. Increased to better smooth false height differences during orientation changes.
+
+slope:
+  enable: True
+  fill_nan: False                             # Don't fill NaN - slope is only valid where normals exist
+  is_height_layer: False                      # Slope is an angle, not a height
+  layer_name: "slope"
+  extra_params:
+    output_units: "degrees"                   # 'degrees' for [0, 90] or 'radians' for [0, pi/2]
+    
+    # Robust filtering pipeline (handles camera pose errors & noise)
+    enable_robust_filtering: True             # Enable multi-stage filtering
+    
+    # Stage 1: Variance filtering
+    max_variance_threshold: 100.0             # Relaxed: accept almost everything initially
+    
+    # Stage 2: Outlier detection (detects fake walls from pose errors)
+    enable_outlier_detection: True            # Detect elevation outliers
+    outlier_threshold: 0.2                    # Relaxed: 1.0m threshold
+    outlier_kernel_size: 2                    # neighborhood size (5x5) for outlier detection
+    
+    # Stage 3: Spatial filtering
+    enable_spatial_filter: True               # Apply median filter to normals
+    spatial_filter_size: 6                    # median filter kernel (3x3)
+    
+    # Stage 4: Temporal smoothing (balanced for dynamic obstacles)
+    enable_temporal_smoothing: False           # Use historical normal data
+    temporal_alpha: 0.6                       # 0.7 = balanced (0.0=max smooth, 1.0=instant response)
+    
+    # Stage 5: Confidence weighting
+    enable_confidence_weighting: True         # Weight slopes by reliability
+    time_decay: 15.0                           # seconds, confidence decay for old data
+
+# erosion:
+#   enable: True
+#   fill_nan: False
+#   is_height_layer: False
+#   layer_name: "erosion"
+#   extra_params:
+#     input_layer_name: "traversability"
+#     dilation_size: 6
+#     iteration_n: 5
+#     reverse: True
+
+
+# smooth_filter:
+#   enable: False
+#   fill_nan: False
+#   is_height_layer: True
+#   layer_name: "smooth"
+#   extra_params:
+#     input_layer_name: "min_filter"
+
+# inpainting:
+#   enable: False
+#   fill_nan: False
+#   is_height_layer: True
+#   layer_name: "inpaint"
+#   extra_params:
+#     method: "telea"                           # telea or ns
+
+# robot_centric_elevation:                                  # Use the same name as your file name.
+#   enable: False                                # weather to load this plugin
+#   fill_nan: False                              # Fill nans to invalid cells of elevation layer.
+#   is_height_layer: True                       # If this is a height layer (such as elevation) or not (such as traversability)
+#   layer_name: "robot_centric_elevation"                 # The layer name.
+#   extra_params:                               # This params are passed to the plugin class on initialization.
+#     resolution: 0.04
+#     threshold: 1.1
+#     use_threshold: True
+
+# semantic_filter:
+#   type: "semantic_filter"
+#   enable: False
+#   fill_nan: False
+#   is_height_layer: False
+#   layer_name: "max_categories"
+#   extra_params:
+#     classes: ['^sem_.*$']
+
+# semantic_traversability:
+#   type: "semantic_traversability"
+#   enable: False
+#   fill_nan: False
+#   is_height_layer: False
+#   layer_name: "semantic_traversability"
+#   extra_params:
+#     layers: ['traversability','robot_centric_elevation']
+#     thresholds: [0.3,0.5]
+#     type: ['traversability', 'elevation']
+
+# features_pca:
+#   type: "features_pca"
+#   enable: False
+#   fill_nan: False
+#   is_height_layer: False
+#   layer_name: "pca"
+#   extra_params:
+#     process_layer_names: ["^feat_.*$"]

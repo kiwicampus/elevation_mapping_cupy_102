@@ -1,0 +1,102 @@
+elevation_mapping_node:
+  ros__parameters:
+    
+    #### Frames & topics 
+    pose_topic: ''                              # External pose topic; leave empty to use TF only.
+    map_frame: 'odom'                           # Frame in which the map is expressed. 
+    base_frame: 'base_link'                     # Robot base frame; EV centers the local grid around this frame.
+    corrected_map_frame: 'odom'                 # Frame published when drift correction is enabled (if used).
+    
+    #### Grid / map geometry 
+    resolution: 0.07                            # Grid cell size [m]. Smaller = more detail, more compute/noise.
+    map_length: 5.0                             # Side length of the square local map window [m].
+
+    #### Sensor & outlier handling 
+    # lighter point cloud = fewer drops
+    voxel_filter_size: 0.07                     # Voxel downsampling size [m] applied to incoming points.
+    sensor_noise_factor: 0.1                   # Depth noise model: σ ≈ sensor_noise_factor * z^2 (z in meters).
+
+    # reject obvious bad returns
+    min_valid_distance: 0.20                    # Discard points closer than this range [m].
+    max_height_range: 0.65                       # Discard points with height above this from the sensor [m] (e.g., ceiling). 
+    mahalanobis_thresh: 2.5                     # Outlier cutoff in Mahalanobis distance; lower = stricter.
+    outlier_variance: 0.001                      # Added variance for outlier hits to reduce their fusion influence.
+
+    # Ramped ceiling: reject if z > max(d - ramped_height_range_b, 0) * a + c
+    ramped_height_range_a: 0.125                 # Ramp slope (a) in the height gating rule.
+    ramped_height_range_b: 1.0                  # Distance offset (b) where ramp starts to apply [m].
+    ramped_height_range_c: 0.5                 # Base allowance (c) in the height gating rule [m].
+
+    #### Variance / fusion weights 
+    average_weight: 0.5                        # Fusion weight: higher trusts new measurements more (faster, noisier).
+    time_variance: 0.5                         # Per-update process variance (models slow changes in the surface).
+    initial_variance: 1000.0                      # Starting variance for each cell before confident observations.
+    max_variance: 100.0                         # Upper cap to keep cell variance numerically stable.
+
+    #### Timings & rates 
+    update_variance_fps: 5.0                   # Frequency to update per-cell variances.
+    update_pose_fps: 5.0                       # Frequency to fetch robot pose/shift map center.
+    time_interval: 0.1                         # Interval [s] used to update the "time" layer (if present).
+    map_acquire_fps: 5.0                       # Rate to pull the raw grid from GPU memory.
+    publish_statistics_fps: 1.0                 # Rate to publish node statistics/diagnostics.
+    recordable_fps: 3.0                        # Rate-limit for heavy/recordable outputs (e.g., point clouds).
+
+    #### Visibility cleanup / ray tracing 
+    max_ray_length: 6.0                         # Maximum ray length used for occlusion cleanup [m].
+    cleanup_step: 0.10                          # Amount subtracted from validity during cleanup (stronger if larger).
+    cleanup_cos_thresh: 0.35                    # Cosine threshold for angle-based visibility gating.
+
+    #### Drift compensation (uses stable, traversable cells) 
+    enable_drift_compensation: true             # Enable TF drift estimation/correction using stable cells.
+    drift_compensation_variance_inlier: 0.1    # Cells with variance below this are considered stable for drift.
+    max_drift: 0.1                             # Only correct if estimated drift magnitude is below this [m/rad].      
+    drift_compensation_alpha: 0.1              # Smoothing factor for applying drift corrections. 
+    min_height_drift_cnt: 100                   # Minimum number of valid cells required to estimate drift.
+    position_noise_thresh: 0.01                # Ignore tiny position changes below this threshold.   
+    orientation_noise_thresh: 0.01             # Ignore tiny orientation changes below this threshold [rad].
+    position_lowpass_alpha: 0.2                # Low-pass filter alpha for position change detection.       
+    orientation_lowpass_alpha: 0.2             # Low-pass filter alpha for orientation change detection.
+    traversability_inlier: 0.9                  # Use cells with traversability ≥ this value for drift estimation.
+
+    #### Safety / traversability layers 
+    dilation_size: 2                            # Morphological dilation size before traversability filtering [cells].
+    wall_num_thresh: 20                          # If many points in a cell, keep only higher ones to sharpen walls.
+    safe_thresh: 0.7                            # Cells with traversability below this are considered unsafe.
+    safe_min_thresh: 0.4                        # A polygon is unsafe if any cell falls below this threshold.
+    max_unsafe_n: 10                            # Max count of unsafe cells allowed before flagging a region unsafe.
+    checker_layer: 'traversability'                # layer name for checking the validity of the cell.
+
+    #### Overlap clearance (multi-floor)  
+    overlap_clear_range_xy: 6.0                 # XY range [m] around robot where overlap clearing is applied.
+    overlap_clear_range_z: 0.65                  # Z range [m] used to clear cells outside valid floor band.    
+
+    #### Feature toggles 
+    enable_edge_sharpen: false                   # Apply edge sharpening to height map.
+    enable_visibility_cleanup: true             # Run ray-based cleanup for occlusions.
+    enable_overlap_clearance: false             # Enable clearing for multi-floor overlap scenarios.
+    enable_pointcloud_publishing: false          # Publish map as point cloud (heavier output).
+    enable_drift_corrected_TF_publishing: false # Publish drift-corrected TF; keep false for bag playback to avoid TF_OLD_DATA.
+    enable_normal_color: true                  # Add a 'color' layer from normals (requires adding to publishers).
+    enable_normal_arrow_publishing: false       # Publish normal arrows for visualization (RViz).
+
+    #### Initializer 
+    initialize_method: 'linear'                 # Interpolation for initializing cells: 'nearest' | 'linear' | 'cubic'.
+    initialize_frame_id: ['base_link']          # TF frame(s) used to define init region(s).     
+    initialize_tf_offset: [0.0, 0.0, 0.0, 0.0]  # Z offset(s) [m] applied during initialization (one per frame). 
+    dilation_size_initialize: 1               # Dilation size [cells] after initialization pass    
+    initialize_tf_grid_size: 1.0                # Grid radius [m] for init when ≤3 frames are provided.
+    use_initializer_at_start: true              # Run initializer once on startup.
+
+    #### Traversability filter 
+    use_chainer: false                          # Backend for traversability CNN: false = PyTorch (faster, more RAM).
+    # weight_file: '$(find-pkg-share elevation_mapping_cupy)/config/core/weights.dat'  # Weight file for traversability filter
+    #weight_file: '/home/ros/workspace/src/elevation_mapping_cupy/elevation_mapping_cupy/config/core/weights.dat'  # CNN weights.
+    weight_file: '$(find-pkg-share elevation_mapping_cupy)/config/core/weights.dat'
+
+    #### Upper bound 
+    use_only_above_for_upper_bound: false        # For upper-bound estimation, use only measurements above cell height.
+
+    #### Default Plugins 
+    plugin_config_file: '/home/ros/workspace/src/elevation_mapping_cupy/elevation_mapping_cupy/config/setups/kiwi/kiwi_plugin_config.yaml' # Layer/filter plugins.
+    #plugin_config_file: '$(find-pkg-share elevation_mapping_cupy)/config/setups/kiwi/kiwi_plugin_config.yaml'
+
