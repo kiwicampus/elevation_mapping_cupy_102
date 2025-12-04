@@ -186,42 +186,35 @@ class PluginManager(object):
         semantic_params=None,
         rotation=None,
         elements_to_shift={},
+        normal_map=None,
     ):
         idx = self.get_layer_index_with_name(name)
         if idx is not None and idx < len(self.plugins):
-            n_param = len(signature(self.plugins[idx]).parameters)
-            if n_param == 5:
-                self.layers[idx] = self.plugins[idx](elevation_map, layer_names, self.layers, self.layer_names)
-            elif n_param == 7:
-                self.layers[idx] = self.plugins[idx](
-                    elevation_map,
-                    layer_names,
-                    self.layers,
-                    self.layer_names,
-                    semantic_map,
-                    semantic_params,
-                )
-            elif n_param == 8:
-                self.layers[idx] = self.plugins[idx](
-                    elevation_map,
-                    layer_names,
-                    self.layers,
-                    self.layer_names,
-                    semantic_map,
-                    semantic_params,
-                    rotation,
-                )
-            else:
-                self.layers[idx] = self.plugins[idx](
-                    elevation_map,
-                    layer_names,
-                    self.layers,
-                    self.layer_names,
-                    semantic_map,
-                    semantic_params,
-                    rotation,
-                    elements_to_shift,
-                )
+            sig = signature(self.plugins[idx])
+            params = sig.parameters
+            n_param = len(params)
+            
+            # Check if plugin accepts normal_map or **kwargs
+            accepts_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
+            accepts_normal_map = 'normal_map' in params
+            
+            # Build positional arguments based on parameter count
+            args = [elevation_map, layer_names, self.layers, self.layer_names]
+            
+            if n_param >= 7:
+                args.extend([semantic_map, semantic_params])
+            if n_param >= 8:
+                args.append(rotation)
+            if n_param >= 9:
+                args.append(elements_to_shift)
+            
+            # Build keyword arguments if plugin accepts them
+            kwargs = {}
+            if (accepts_kwargs or accepts_normal_map) and normal_map is not None:
+                kwargs['normal_map'] = normal_map
+            
+            # Call plugin with constructed args and kwargs
+            self.layers[idx] = self.plugins[idx](*args, **kwargs)
 
     def get_map_with_name(self, name: str) -> cp.ndarray:
         idx = self.get_layer_index_with_name(name)

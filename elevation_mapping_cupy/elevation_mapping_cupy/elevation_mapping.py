@@ -777,6 +777,7 @@ class ElevationMap:
                     self.semantic_map.layer_names,
                     self.base_rotation,
                     self.semantic_map.elements_to_shift,
+                    normal_map=self.normal_map,
                 )
                 m = self.plugin_manager.get_map_with_name(name)
                 p = self.plugin_manager.get_param_with_name(name)

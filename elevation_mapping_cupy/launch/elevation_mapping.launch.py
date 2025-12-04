@@ -4,20 +4,21 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
+from launch_ros.descriptions import ParameterFile
 
 def generate_launch_description():
     package_name = 'elevation_mapping_cupy'
     share_dir = get_package_share_directory(package_name)
 
     # Define paths
-    core_param_path = os.path.join(share_dir, 'config', 'core', 'core_param.yaml')
+    core_param_path = os.path.join(share_dir, 'config', 'setups', 'kiwi', 'kiwi_parameters.yaml')
 
     # Declare launch arguments
     robot_param_arg = DeclareLaunchArgument(
         'robot_config',
         # default_value='turtle_bot/turle_bot_simple.yaml',
-        default_value='menzi/base.yaml',
+        default_value='kiwi/kiwi_sensor_parameter.yaml',
         description='Name of the robot-specific config file within config/setups/'
     )
 
@@ -39,28 +40,51 @@ def generate_launch_description():
         description='Use simulation clock if true'
     )
 
+    use_python_node_arg = DeclareLaunchArgument(
+        'use_python_node',
+        default_value='false',
+        description='Use the Python node if true'
+    )
+
     # Get launch configurations
     robot_config = LaunchConfiguration('robot_config')
     robot_param_path = PathJoinSubstitution([share_dir, 'config', 'setups', robot_config])
     launch_rviz = LaunchConfiguration('launch_rviz')
     rviz_config = LaunchConfiguration('rviz_config')
     use_sim_time = LaunchConfiguration('use_sim_time')
+    use_python_node = LaunchConfiguration('use_python_node')
 
     # Verify core config exists
     if not os.path.exists(core_param_path):
         raise FileNotFoundError(f"Config file {core_param_path} does not exist")
 
     # Define nodes
+    # Python node
+    elevation_mapping_node_py = Node(
+        package=package_name,
+        executable='elevation_mapping_node.py',
+        name='elevation_mapping_node',
+        output='screen',
+        parameters=[
+            ParameterFile(core_param_path, allow_substs=True),
+            robot_param_path,
+            {'use_sim_time': use_sim_time}
+        ],
+        condition=IfCondition(use_python_node)
+    )
+
+    # C++ node
     elevation_mapping_node = Node(
         package=package_name,
         executable='elevation_mapping_node',
         name='elevation_mapping_node',
         output='screen',
         parameters=[
-            core_param_path,
+            ParameterFile(core_param_path, allow_substs=True),
             robot_param_path,
             {'use_sim_time': use_sim_time}
-        ]
+        ],
+        condition=UnlessCondition(use_python_node)
     )
 
     rviz_node = Node(
@@ -78,6 +102,8 @@ def generate_launch_description():
         launch_rviz_arg,
         rviz_config_arg,
         use_sim_time_arg,
+        use_python_node_arg,
+        elevation_mapping_node_py,
         elevation_mapping_node,
         rviz_node
     ])

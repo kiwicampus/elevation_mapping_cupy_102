@@ -12,6 +12,7 @@ from sensor_msgs.msg import PointCloud2, Image, CameraInfo
 from sensor_msgs_py import point_cloud2
 from tf_transformations import quaternion_matrix
 import tf2_ros
+import tf2_py as tf2
 import message_filters
 from cv_bridge import CvBridge
 from rclpy.duration import Duration
@@ -38,14 +39,12 @@ class ElevationMappingNode(Node):
         super().__init__(
             'elevation_mapping_node',
             automatically_declare_parameters_from_overrides=True,
-            allow_undeclared_parameters=True,
-            parameter_overrides=[
-                rclpy.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, True)
-            ]
+            allow_undeclared_parameters=True
         )
+
         self.root = get_package_share_directory("elevation_mapping_cupy")
         weight_file = os.path.join(self.root, "config/core/weights.dat")
-        plugin_config_file = os.path.join(self.root, "config/core/plugin_config.yaml")
+        plugin_config_file = os.path.join(self.root, "config/setups/kiwi/kiwi_plugin_config.yaml")
 
         # Initialize parameters with some defaults
         self.param = Parameter(
@@ -214,8 +213,8 @@ class ElevationMappingNode(Node):
         for key, config in self.my_subscribers.items():
             data_type = config.get("data_type")
             if data_type == "image":
-                topic_name_camera = config.get("topic_name_camera", "/camera/image")
-                topic_name_camera_info = config.get("topic_name_camera_info", "/camera/camera_info")
+                topic_name_camera = config.get("topic_name_camera", "/camera_color/image_raw")
+                topic_name_camera_info = config.get("topic_name_camera_info", "/camera_color/camera_info")
                 camera_sub = message_filters.Subscriber(
                     self,
                     Image,
@@ -241,7 +240,8 @@ class ElevationMappingNode(Node):
                 # )
                 # qos_profile = QoSPresetProfiles.get_from_short_key("sensor_data")
                 # qos_profile = rclpy.qos.QoSProfile(depth=10)
-                qos_profile = 10
+                # Use sensor data QoS (BEST_EFFORT) for point clouds
+                qos_profile = QoSPresetProfiles.get_from_short_key("sensor_data")
                 subscription = self.create_subscription(
                     PointCloud2,
                     topic_name,
@@ -322,11 +322,41 @@ class ElevationMappingNode(Node):
                 time
             )
         except tf2_ros.ExtrapolationException:
-            return self._tf_buffer.lookup_transform(
-                target_frame,
-                source_frame,
-                rclpy.time.Time()
+            # Time is in the future/past, try with latest available
+            try:
+                return self._tf_buffer.lookup_transform(
+                    target_frame,
+                    source_frame,
+                    rclpy.time.Time()
+                )
+            except (tf2.LookupException, tf2.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+                # Transform still not available even at current time, log and skip
+                self.get_logger().warning(
+                    f"Transform from '{source_frame}' to '{target_frame}' not available (even at latest time): {e}",
+                    throttle_duration_sec=5.0
+                )
+                return None
+        except tf2.LookupException as e:
+            # Frame doesn't exist
+            self.get_logger().warning(
+                f"Frame '{target_frame}' or '{source_frame}' does not exist: {e}",
+                throttle_duration_sec=5.0
             )
+            return None
+        except tf2.ConnectivityException as e:
+            # No transform path between frames
+            self.get_logger().warning(
+                f"No transform path from '{source_frame}' to '{target_frame}': {e}",
+                throttle_duration_sec=5.0
+            )
+            return None
+        except Exception as e:
+            # Catch any other unexpected TF2 errors
+            self.get_logger().warning(
+                f"Unexpected TF2 error for transform from '{source_frame}' to '{target_frame}': {e}",
+                throttle_duration_sec=5.0
+            )
+            return None
 
     def image_callback(self, camera_msg: Image, camera_info_msg: CameraInfo, sub_key: str) -> None:
         self._last_t = camera_msg.header.stamp
@@ -347,13 +377,25 @@ class ElevationMappingNode(Node):
             camera_msg.header.frame_id,
             camera_msg.header.stamp
         )
+        if transform_camera_to_map is None:
+            # Transform not available, skip this image
+            return
         t = transform_camera_to_map.transform.translation
         q = transform_camera_to_map.transform.rotation
         t_np = np.array([t.x, t.y, t.z], dtype=np.float32)
         R = quaternion_matrix([q.x, q.y, q.z, q.w])[:3, :3].astype(np.float32)
+        
+        # Determine channels - default to ["rgb"] if not specified
+        channels = self.param.subscriber_cfg[sub_key].get("channels", ["rgb"])
+        if not isinstance(channels, list):
+            channels = [channels]
+        
+        # Get distortion model from camera info, default to "plumb_bob" if not set
+        distortion_model = camera_info_msg.distortion_model if camera_info_msg.distortion_model else "plumb_bob"
+        
         self._map.input_image(
-            sub_key, semantic_img, R, t_np, K, D,
-            camera_info_msg.height, camera_info_msg.width
+            semantic_img, channels, R, t_np, K, D,
+            distortion_model, camera_info_msg.height, camera_info_msg.width
         )
         self._image_process_counter += 1
 
@@ -364,29 +406,93 @@ class ElevationMappingNode(Node):
         channels = ["x", "y", "z"] + additional_channels
         try:
             points = rnp.numpify(msg)
-        except:
+        except Exception as e:
+            self.get_logger().warn(f"Failed to numpify point cloud: {e}")
             return
-        if points['x'].size == 0:
+        
+        # Check if points is empty - handle both structured array and dict cases
+        if points is None:
             return
+        
+        # Handle different data structures from rnp.numpify
+        if isinstance(points, dict):
+            # If it's a dict, check if it has data
+            if not points or (len(points) == 0):
+                return
+            # Check for x,y,z keys or xyz field in dict
+            if 'xyz' in points:
+                # Handle combined xyz field (common in Livox lidars)
+                xyz_data = points['xyz']
+                if len(xyz_data) == 0:
+                    return
+            elif 'x' in points:
+                # Handle separate x,y,z fields
+                if len(points['x']) == 0:
+                    return
+            else:
+                self.get_logger().warn(f"Point cloud dict missing 'x' or 'xyz' field. Available fields: {list(points.keys())}")
+                return
+        else:
+            # It's a structured numpy array
+            if points.size == 0:
+                return
         frame_sensor_id = msg.header.frame_id
         transform_sensor_to_map = self.safe_lookup_transform(
             self.map_frame,
             frame_sensor_id,
             msg.header.stamp
         )
+        if transform_sensor_to_map is None:
+            # Transform not available, skip this pointcloud
+            return
         t = transform_sensor_to_map.transform.translation
         q = transform_sensor_to_map.transform.rotation
         t_np = np.array([t.x, t.y, t.z], dtype=np.float32)
         R = quaternion_matrix([q.x, q.y, q.z, q.w])[:3, :3].astype(np.float32)
-        pts = rnp.point_cloud2.get_xyz_points(points)
-        # TODO: This is probably expensive. Consider modifying rnp or input_pointcloud()
-        # Append additional channels to pts
-        for channel in additional_channels:
-            if channel in points.dtype.names:
-                data = points[channel].flatten()
-                if data.ndim == 1:
-                    data = data[:, np.newaxis]
-                pts = np.hstack((pts, data))
+        
+        # Extract xyz points based on data structure
+        if isinstance(points, dict):
+            # If points is a dict, manually construct xyz array
+            if 'xyz' in points:
+                # Handle combined xyz field (common in Livox lidars)
+                xyz_array = np.array(points['xyz'])
+                if xyz_array.ndim == 2 and xyz_array.shape[1] == 3:
+                    pts = xyz_array
+                elif xyz_array.ndim == 1:
+                    # Reshape if flattened
+                    pts = xyz_array.reshape(-1, 3)
+                else:
+                    # Try to extract x, y, z from the structure
+                    pts = xyz_array[:, :3] if xyz_array.shape[1] >= 3 else xyz_array
+            elif 'x' in points and 'y' in points and 'z' in points:
+                # Handle separate x,y,z fields
+                x = np.array(points['x']).flatten()
+                y = np.array(points['y']).flatten()
+                z = np.array(points['z']).flatten()
+                pts = np.column_stack((x, y, z))
+            else:
+                # Fallback: try to use any available method
+                self.get_logger().warn(f"Unexpected point cloud structure, attempting fallback")
+                return
+            
+            # Append additional channels
+            for channel in additional_channels:
+                if channel in points:
+                    data = np.array(points[channel]).flatten()
+                    if data.ndim == 1:
+                        data = data[:, np.newaxis]
+                    pts = np.hstack((pts, data))
+        else:
+            # Use standard method for structured arrays
+            pts = rnp.point_cloud2.get_xyz_points(points)
+            # TODO: This is probably expensive. Consider modifying rnp or input_pointcloud()
+            # Append additional channels to pts
+            for channel in additional_channels:
+                if hasattr(points, 'dtype') and hasattr(points.dtype, 'names') and channel in points.dtype.names:
+                    data = points[channel].flatten()
+                    if data.ndim == 1:
+                        data = data[:, np.newaxis]
+                    pts = np.hstack((pts, data))
         self._map.input_pointcloud(pts, channels, R, t_np, 0, 0)
         self._pointcloud_process_counter += 1
 
@@ -398,6 +504,9 @@ class ElevationMappingNode(Node):
             self.base_frame,
             self._last_t
         )
+        if transform is None:
+            # Transform not available, skip pose update
+            return
         t = transform.transform.translation
         q = transform.transform.rotation
         trans = np.array([t.x, t.y, t.z], dtype=np.float32)
