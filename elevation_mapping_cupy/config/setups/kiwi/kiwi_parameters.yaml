@@ -89,14 +89,11 @@ elevation_mapping_node:
 
     #### Traversability filter 
     use_chainer: false                          # Backend for traversability CNN: false = PyTorch (faster, more RAM).
-    # weight_file: '$(find-pkg-share elevation_mapping_cupy)/config/core/weights.dat'  # Weight file for traversability filter
-    #weight_file: '/home/ros/workspace/src/elevation_mapping_cupy/elevation_mapping_cupy/config/core/weights.dat'  # CNN weights.
-    weight_file: '$(find-pkg-share elevation_mapping_cupy)/config/core/weights.dat'
+    weight_file: '$(find-pkg-share elevation_mapping_cupy)/config/core/weights.dat'  # CNN weights.
 
     #### Upper bound 
     use_only_above_for_upper_bound: false        # For upper-bound estimation, use only measurements above cell height.
 
     #### Default Plugins 
-    plugin_config_file: '/home/ros/workspace/src/elevation_mapping_cupy/elevation_mapping_cupy/config/setups/kiwi/kiwi_plugin_config.yaml' # Layer/filter plugins.
-    #plugin_config_file: '$(find-pkg-share elevation_mapping_cupy)/config/setups/kiwi/kiwi_plugin_config.yaml'
+    plugin_config_file: '$(find-pkg-share elevation_mapping_cupy)/config/setups/kiwi/kiwi_plugin_config.yaml' # Layer/filter plugins.
 
