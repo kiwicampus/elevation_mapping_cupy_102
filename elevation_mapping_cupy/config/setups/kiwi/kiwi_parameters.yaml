@@ -8,19 +8,19 @@ elevation_mapping_node:
     corrected_map_frame: 'odom'                 # Frame published when drift correction is enabled (if used).
     
     #### Grid / map geometry 
-    resolution: 0.07                            # Grid cell size [m]. Smaller = more detail, more compute/noise.
+    resolution: 0.06                            # Grid cell size [m]. Smaller = more detail, more compute/noise.
     map_length: 5.0                             # Side length of the square local map window [m].
 
     #### Sensor & outlier handling 
     # lighter point cloud = fewer drops
-    voxel_filter_size: 0.07                     # Voxel downsampling size [m] applied to incoming points.
-    sensor_noise_factor: 0.1                   # Depth noise model: σ ≈ sensor_noise_factor * z^2 (z in meters).
+    voxel_filter_size: 0.06                     # Voxel downsampling size [m] applied to incoming points.
+    sensor_noise_factor: 0.06                   # Depth noise model: σ ≈ sensor_noise_factor * z^2 (z in meters).
 
     # reject obvious bad returns
     min_valid_distance: 0.20                    # Discard points closer than this range [m].
     max_height_range: 0.65                       # Discard points with height above this from the sensor [m] (e.g., ceiling). 
-    mahalanobis_thresh: 2.5                     # Outlier cutoff in Mahalanobis distance; lower = stricter.
-    outlier_variance: 0.001                      # Added variance for outlier hits to reduce their fusion influence.
+    mahalanobis_thresh: 1.5                     # Outlier cutoff in Mahalanobis distance; lower = stricter.
+    outlier_variance: 0.01                      # Added variance for outlier hits to reduce their fusion influence.
 
     # Ramped ceiling: reject if z > max(d - ramped_height_range_b, 0) * a + c
     ramped_height_range_a: 0.125                 # Ramp slope (a) in the height gating rule.
@@ -29,12 +29,12 @@ elevation_mapping_node:
 
     #### Variance / fusion weights 
     average_weight: 0.5                        # Fusion weight: higher trusts new measurements more (faster, noisier).
-    time_variance: 0.5                         # Per-update process variance (models slow changes in the surface).
+    time_variance: 0.001                         # Per-update process variance (models slow changes in the surface).
     initial_variance: 1000.0                      # Starting variance for each cell before confident observations.
     max_variance: 100.0                         # Upper cap to keep cell variance numerically stable.
 
     #### Timings & rates 
-    update_variance_fps: 5.0                   # Frequency to update per-cell variances.
+    update_variance_fps: 10.0                   # Frequency to update per-cell variances.
     update_pose_fps: 5.0                       # Frequency to fetch robot pose/shift map center.
     time_interval: 0.1                         # Interval [s] used to update the "time" layer (if present).
     map_acquire_fps: 7.0                       # Rate to pull the raw grid from GPU memory.
@@ -72,7 +72,7 @@ elevation_mapping_node:
 
     #### Feature toggles 
     enable_edge_sharpen: false                   # Apply edge sharpening to height map.
-    enable_visibility_cleanup: true             # Run ray-based cleanup for occlusions.
+    enable_visibility_cleanup: false             # Run ray-based cleanup for occlusions.
     enable_overlap_clearance: false             # Enable clearing for multi-floor overlap scenarios.
     enable_pointcloud_publishing: false          # Publish map as point cloud (heavier output).
     enable_drift_corrected_TF_publishing: false # Publish drift-corrected TF; keep false for bag playback to avoid TF_OLD_DATA.

@@ -9,34 +9,32 @@
 
 slope:
   enable: True
-  fill_nan: False                             # Don't fill NaN - slope is only valid where normals exist
+  fill_nan: False                             # Don't fill NaNs (Slope is only valid where normals exist)
   is_height_layer: False                      # Slope is an angle, not a height
   layer_name: "slope"
+  
   extra_params:
-    output_units: "degrees"                   # 'degrees' for [0, 90] or 'radians' for [0, pi/2]
+    output_units: "degrees"                   # Output in degrees [0, 90]
+       
+    # 1. Spatial Filter (Median): Reduces high-frequency sensor noise (e.g., "salt-and-pepper").
+    spatial_filter_size: 5                    # Kernel size (6x6). Higher value = more smoothing.
+                                              # To DISABLE: Set to 1.
     
-    # Robust filtering pipeline (handles camera pose errors & noise)
-    enable_robust_filtering: True             # Enable multi-stage filtering
+    # 2. Temporal Smoothing (Exponential Moving Average / EMA)
+    # Rejects transient (single-frame) noise and stabilizes slopes over time.
+    temporal_alpha: 0.7                       # EMA factor (0.7 = 70% current, 30% history).
+                                              # To DISABLE: Set to 1.0. 
     
-    # Stage 1: Variance filtering
-    max_variance_threshold: 100.0             # Relaxed: accept almost everything initially
+    # 3. Confidence Weighting (Variance and Time Decay)
     
-    # Stage 2: Outlier detection (detects fake walls from pose errors)
-    enable_outlier_detection: True            # Detect elevation outliers
-    outlier_threshold: 0.2                    # Relaxed: 1.0m threshold
-    outlier_kernel_size: 2                    # neighborhood size (5x5) for outlier detection
+    # Controls the penalization of low-quality data (used as a quality/age guardrail).
+    # If Variance > threshold, confidence drops.
+    max_variance_threshold: 0.11              # Data with variance > 0.11 (old/border data) is penalized.
+                                              # To DISABLE: Set to a high value like 100.0.
     
-    # Stage 3: Spatial filtering
-    enable_spatial_filter: True               # Apply median filter to normals
-    spatial_filter_size: 6                    # median filter kernel (3x3)
-    
-    # Stage 4: Temporal smoothing (balanced for dynamic obstacles)
-    enable_temporal_smoothing: False           # Use historical normal data
-    temporal_alpha: 0.6                       # 0.7 = balanced (0.0=max smooth, 1.0=instant response)
-    
-    # Stage 5: Confidence weighting
-    enable_confidence_weighting: True         # Weight slopes by reliability
-    time_decay: 15.0                           # seconds, confidence decay for old data
+    # Controls how quickly old data fades away (time-based penalization).
+    time_decay: 15.0                          # Time (seconds) until data confidence significantly drops.
+                                              # To DISABLE: Set to a very high value (e.g., 1000.0).
 
 # erosion:
 #   enable: True
