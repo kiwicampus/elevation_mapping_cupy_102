@@ -132,15 +132,51 @@ class Slope(PluginBase):
         **kwargs,
     ) -> cp.ndarray:
         
-        # 1. Get Normal Vectors from System (Assumed to be provided by the elevation mapping core)
-        normal_map = kwargs.get('normal_map', None)
-        normal_x, normal_y, normal_z = normal_map[0].copy(), normal_map[1].copy(), normal_map[2].copy()
-            
-        # 2. Get Auxiliary Layers (variance, is_valid, time)
-        # These layers are crucial for robust filtering and confidence weighting.
+        # 1. Get Auxiliary Layers (variance, is_valid, time, resolution)
         variance = elevation_map[1].copy()
         is_valid = elevation_map[2].copy()
         time_layer = elevation_map[4].copy() if len(elevation_map) > 4 else None
+        elevation = elevation_map[0].copy()
+        
+        # 2. Calculate normals directly from elevation map (more efficient than using pre-computed normals)
+        # This avoids the need for dilation_filter_kernel, as the spatial median filter will smooth anyway
+        resolution = kwargs.get('resolution', 0.08)  # Default resolution, should be passed from system
+        
+        # Calculate gradients using finite differences
+        # dz/dx and dz/dy for normal calculation
+        # We'll calculate this efficiently using array operations
+        h, w = elevation.shape
+        normal_x = cp.zeros_like(elevation)
+        normal_y = cp.zeros_like(elevation)
+        normal_z = cp.ones_like(elevation)
+        
+        # Calculate gradients only for valid cells
+        valid_mask = is_valid > 0.5
+        # dz/dx: difference in x direction (columns)
+        dzdx = cp.zeros_like(elevation)
+        dzdy = cp.zeros_like(elevation)
+        
+        # Forward differences for interior points
+        dzdx[:, 1:-1] = cp.where(
+            valid_mask[:, 1:-1] & valid_mask[:, 2:],
+            (elevation[:, 2:] - elevation[:, 1:-1]) / resolution,
+            0.0
+        )
+        dzdy[1:-1, :] = cp.where(
+            valid_mask[1:-1, :] & valid_mask[2:, :],
+            (elevation[2:, :] - elevation[1:-1, :]) / resolution,
+            0.0
+        )
+        
+        # Normal vectors: n = (-dz/dy, -dz/dx, 1) normalized
+        normal_x = -dzdy
+        normal_y = -dzdx
+        
+        # Normalize
+        norm = cp.sqrt(normal_x**2 + normal_y**2 + normal_z**2)
+        normal_x = cp.where(valid_mask, normal_x / norm, 0.0)
+        normal_y = cp.where(valid_mask, normal_y / norm, 0.0)
+        normal_z = cp.where(valid_mask, normal_z / norm, 1.0)
         
         # 3. Stage: Spatial Filter (Smooths out high-frequency sensor noise)
         normal_x, normal_y, normal_z = self._apply_spatial_filter(normal_x, normal_y, normal_z)

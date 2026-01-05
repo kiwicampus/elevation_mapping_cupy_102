@@ -9,10 +9,6 @@ import numpy as np
 import threading
 import subprocess
 
-from elevation_mapping_cupy.traversability_filter import (
-    get_filter_chainer,
-    get_filter_torch,
-)
 from elevation_mapping_cupy.parameter import Parameter
 
 from elevation_mapping_cupy.kernels import (
@@ -82,6 +78,9 @@ class ElevationMap:
         # buffers
         self.traversability_buffer = xp.full((self.cell_n, self.cell_n), xp.nan)
         self.normal_map = xp.zeros((3, self.cell_n, self.cell_n), dtype=self.data_type)
+        
+        # Accumulate small shifts to avoid expensive operations on every pose update
+        self.accumulated_shift = xp.array([0.0, 0.0], dtype=self.data_type)
         # Initial variance
         self.initial_variance = param.initial_variance
         self.elevation_map[1] += self.initial_variance
@@ -103,13 +102,21 @@ class ElevationMap:
 
         self.semantic_map.initialize_fusion()
 
-        weight_file = subprocess.getoutput('echo "' + param.weight_file + '"')
-        param.load_weights(weight_file)
-
-        if param.use_chainer:
-            self.traversability_filter = get_filter_chainer(param.w1, param.w2, param.w3, param.w_out)
+        # Only load weights and initialize traversability filter if enabled
+        if param.enable_traversability:
+            # Import traversability filter only when needed
+            from elevation_mapping_cupy.traversability_filter import (
+                get_filter_chainer,
+                get_filter_torch,
+            )
+            weight_file = subprocess.getoutput('echo "' + param.weight_file + '"')
+            param.load_weights(weight_file)
+            if param.use_chainer:
+                self.traversability_filter = get_filter_chainer(param.w1, param.w2, param.w3, param.w_out)
+            else:
+                self.traversability_filter = get_filter_torch(param.w1, param.w2, param.w3, param.w_out)
         else:
-            self.traversability_filter = get_filter_torch(param.w1, param.w2, param.w3, param.w_out)
+            self.traversability_filter = None
         self.untraversable_polygon = xp.zeros((1, 2))
 
         # Plugins
@@ -148,10 +155,21 @@ class ElevationMap:
         # Shift map using delta position.
         delta_position = xp.asarray(delta_position)
         delta_pixel = xp.round(delta_position[:2] / self.resolution)
-        delta_position_xy = delta_pixel * self.resolution
-        self.center[:2] += xp.asarray(delta_position_xy)
+        
+        # Accumulate small shifts and only apply when >= 1 pixel
+        self.accumulated_shift += delta_pixel
+        shift_int = xp.around(self.accumulated_shift).astype(xp.int32)
+        
+        # Only shift if accumulated shift is >= 1 pixel in any direction
+        if xp.abs(shift_int).sum() > 0:
+            # Update center only when we actually shift the map
+            delta_position_xy = shift_int.astype(self.data_type) * self.resolution
+            self.center[:2] += xp.asarray(delta_position_xy)
+            self.shift_map_xy(shift_int)
+            self.accumulated_shift -= shift_int.astype(self.data_type)
+        
+        # Always update Z (no accumulation needed for vertical shifts)
         self.center[2] += xp.asarray(delta_position[2])
-        self.shift_map_xy(delta_pixel)
         self.shift_map_z(-delta_position[2])
 
     def move_to(self, position, R):
@@ -166,10 +184,21 @@ class ElevationMap:
         position = xp.asarray(position)
         delta = position - self.center
         delta_pixel = xp.around(delta[:2] / self.resolution)
-        delta_xy = delta_pixel * self.resolution
-        self.center[:2] += delta_xy
+        
+        # Accumulate small shifts and only apply when >= 1 pixel
+        self.accumulated_shift += delta_pixel
+        shift_int = xp.around(self.accumulated_shift).astype(xp.int32)
+        
+        # Only shift if accumulated shift is >= 1 pixel in any direction
+        if xp.abs(shift_int).sum() > 0:
+            # Update center only when we actually shift the map
+            delta_xy = shift_int.astype(self.data_type) * self.resolution
+            self.center[:2] += delta_xy
+            self.shift_map_xy(-shift_int)
+            self.accumulated_shift -= shift_int.astype(self.data_type)
+        
+        # Always update Z (no accumulation needed for vertical shifts)
         self.center[2] += delta[2]
-        self.shift_map_xy(-delta_pixel)
         self.shift_map_z(-delta[2])
 
     def pad_value(self, x, shift_value, idx=None, value=0.0):
@@ -329,40 +358,45 @@ class ElevationMap:
             orientation_noise (float):
         """
         self.new_map *= 0.0
-        error = cp.array([0.0], dtype=cp.float32)
-        error_cnt = cp.array([0], dtype=cp.float32)
         points = points_all[:, :3]
+        
+        # Only allocate error arrays if drift compensation is enabled
+        if self.param.enable_drift_compensation:
+            error = cp.array([0.0], dtype=cp.float32)
+            error_cnt = cp.array([0], dtype=cp.float32)
+        else:
+            error = None
+            error_cnt = None
 
         with self.map_lock:
             self.shift_translation_to_map_center(t)
             
-            # Log before kernel execution
-            
-            self.error_counting_kernel(
-                self.elevation_map,
-                points,
-                cp.array([0.0], dtype=self.data_type),
-                cp.array([0.0], dtype=self.data_type),
-                R,
-                t,
-                self.new_map,
-                error,
-                error_cnt,
-                size=(points.shape[0]),
-            )
-            
-            if (
-                self.param.enable_drift_compensation
-                and error_cnt > self.param.min_height_drift_cnt
-                and (
-                    position_noise > self.param.position_noise_thresh
-                    or orientation_noise > self.param.orientation_noise_thresh
+            # Only run error_counting_kernel if drift compensation is enabled
+            if self.param.enable_drift_compensation:
+                self.error_counting_kernel(
+                    self.elevation_map,
+                    points,
+                    cp.array([0.0], dtype=self.data_type),
+                    cp.array([0.0], dtype=self.data_type),
+                    R,
+                    t,
+                    self.new_map,
+                    error,
+                    error_cnt,
+                    size=(points.shape[0]),
                 )
-            ):
-                self.mean_error = error / error_cnt
-                self.additive_mean_error += self.mean_error
-                if np.abs(self.mean_error) < self.param.max_drift:
-                    self.elevation_map[0] += self.mean_error * self.param.drift_compensation_alpha
+                
+                if (
+                    error_cnt > self.param.min_height_drift_cnt
+                    and (
+                        position_noise > self.param.position_noise_thresh
+                        or orientation_noise > self.param.orientation_noise_thresh
+                    )
+                ):
+                    self.mean_error = error / error_cnt
+                    self.additive_mean_error += self.mean_error
+                    if np.abs(self.mean_error) < self.param.max_drift:
+                        self.elevation_map[0] += self.mean_error * self.param.drift_compensation_alpha
 
             
             self.add_points_kernel(
@@ -376,32 +410,38 @@ class ElevationMap:
                 self.new_map,
                 size=(points.shape[0]),
             )
-            
-            # Log after adding points
 
             self.average_map_kernel(self.new_map, self.elevation_map, size=(self.cell_n * self.cell_n))
 
-            self.semantic_map.update_layers_pointcloud(points_all, channels, R, t, self.new_map)
+            # Only update semantic map if explicitly enabled and there are additional channels
+            # Note: 'channels' parameter here contains only additional channels (without x, y, z)
+            if self.param.enable_semantic_layers and len(channels) > 0:
+                # Reconstruct full channels list: x, y, z + additional_channels
+                full_channels = ["x", "y", "z"] + channels
+                self.semantic_map.update_layers_pointcloud(points_all, full_channels, R, t, self.new_map)
 
             if self.param.enable_overlap_clearance:
                 self.clear_overlap_map(t)
 
-            self.traversability_input *= 0.0
-            self.dilation_filter_kernel(
-                self.elevation_map[5],
-                self.elevation_map[2] + self.elevation_map[6],
-                self.traversability_input,
-                self.traversability_mask_dummy,
-                size=(self.cell_n * self.cell_n),
-            )
+            # Only calculate traversability if enabled
+            if self.param.enable_traversability:
+                self.traversability_input *= 0.0
+                self.dilation_filter_kernel(
+                    self.elevation_map[5],
+                    self.elevation_map[2] + self.elevation_map[6],
+                    self.traversability_input,
+                    self.traversability_mask_dummy,
+                    size=(self.cell_n * self.cell_n),
+                )
 
-            traversability = self.traversability_filter(self.traversability_input)
-            self.elevation_map[3][3:-3, 3:-3] = traversability.reshape(
-                (traversability.shape[2], traversability.shape[3])
-            )
-
-        # Log final state
-        self.update_normal(self.traversability_input)
+                traversability = self.traversability_filter(self.traversability_input)
+                self.elevation_map[3][3:-3, 3:-3] = traversability.reshape(
+                    (traversability.shape[2], traversability.shape[3])
+                )
+        
+        # Don't update normals here - they will be calculated lazily when needed
+        # (e.g., when publishing or when plugin needs them)
+        # This saves significant computation time on every pointcloud update
 
     def clear_overlap_map(self, t):
         """Clear overlapping areas around the map center.
@@ -468,13 +508,10 @@ class ElevationMap:
         """
         raw_points = cp.asarray(raw_points, dtype=self.data_type)
         
-        # Check for the sanity of the raw points
-        min_points = cp.min(raw_points, axis=0)
-        max_points = cp.max(raw_points, axis=0)
-        mean_points = cp.mean(raw_points, axis=0)
-                
-        additional_channels = channels[3:]
+        # Remove NaN points (optimized: only check xyz, not all channels)
         raw_points = raw_points[~cp.isnan(raw_points[:, :3]).any(axis=1)]
+        
+        additional_channels = channels[3:] if len(channels) > 3 else []
         self.update_map_with_kernel(
             raw_points,
             additional_channels,
@@ -580,6 +617,27 @@ class ElevationMap:
                 image_width,
             )
 
+    def _ensure_normals_updated(self):
+        """Ensure normals are up to date. Calculates them lazily only when needed."""
+        # Check if normals need to be updated (simple check - could be improved with timestamp)
+        # For now, always recalculate when requested
+        if self.param.enable_traversability:
+            # Use traversability_input if it was already computed
+            dilated_map = self.traversability_input
+        else:
+            # Calculate dilated map from elevation
+            self.traversability_input *= 0.0
+            with self.map_lock:
+                self.dilation_filter_kernel(
+                    self.elevation_map[0],  # Use elevation
+                    self.elevation_map[2],  # Use is_valid mask
+                    self.traversability_input,
+                    self.traversability_mask_dummy,
+                    size=(self.cell_n * self.cell_n),
+                )
+            dilated_map = self.traversability_input
+        self.update_normal(dilated_map)
+    
     def update_normal(self, dilated_map):
         """Clear the normal map and then apply the normal kernel with dilated map as input.
 
@@ -637,6 +695,10 @@ class ElevationMap:
         Returns:
             traversability layer
         """
+        if not self.param.enable_traversability:
+            # Return NaN array if traversability is disabled
+            return cp.full((self.cell_n - 2, self.cell_n - 2), cp.nan, dtype=self.data_type)
+        
         traversability = cp.where(
             (self.elevation_map[2] + self.elevation_map[6]) > 0.5,
             self.elevation_map[3].copy(),
@@ -746,6 +808,16 @@ class ElevationMap:
         """
         use_stream = True
         xp = cp
+        
+        # Check if we need normals for this layer
+        # Only calculate normals if explicitly requested (normal_x/y/z layers)
+        # Plugins like slope can calculate normals internally from elevation
+        needs_normals = name in ["normal_x", "normal_y", "normal_z"]
+        
+        # Calculate normals lazily only when explicitly needed
+        if needs_normals:
+            self._ensure_normals_updated()
+        
         with self.map_lock:
             if name == "elevation":
                 m = self.get_elevation()
@@ -769,6 +841,8 @@ class ElevationMap:
             elif name in self.semantic_map.layer_names:
                 m = self.semantic_map.get_map_with_name(name)
             elif name in self.plugin_manager.layer_names:
+                # Plugins can calculate normals internally if needed (like slope)
+                # Pass resolution so plugins can compute normals from elevation directly
                 self.plugin_manager.update_with_name(
                     name,
                     self.elevation_map,
@@ -777,7 +851,8 @@ class ElevationMap:
                     self.semantic_map.layer_names,
                     self.base_rotation,
                     self.semantic_map.elements_to_shift,
-                    normal_map=self.normal_map,
+                    normal_map=None,  # Plugins calculate normals internally if needed
+                    resolution=self.resolution,
                 )
                 m = self.plugin_manager.get_map_with_name(name)
                 p = self.plugin_manager.get_param_with_name(name)

@@ -7,6 +7,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSPresetProfiles
 from ament_index_python.packages import get_package_share_directory
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 import ros2_numpy as rnp
 from sensor_msgs.msg import PointCloud2, Image, CameraInfo
 from sensor_msgs_py import point_cloud2
@@ -200,6 +201,10 @@ class ElevationMappingNode(Node):
         except: pass
         try: self.param.enable_overlap_clearance = self.get_parameter('enable_overlap_clearance').get_parameter_value().bool_value
         except: pass
+        try: self.param.enable_traversability = self.get_parameter('enable_traversability').get_parameter_value().bool_value
+        except: pass
+        try: self.param.enable_semantic_layers = self.get_parameter('enable_semantic_layers').get_parameter_value().bool_value
+        except: pass
         try: self.param.use_only_above_for_upper_bound = self.get_parameter('use_only_above_for_upper_bound').get_parameter_value().bool_value
         except: pass
 
@@ -209,6 +214,15 @@ class ElevationMappingNode(Node):
 
         pointcloud_subs = {}
         image_subs = {}
+
+        # Define explicit QoS for PointCloud: Depth 1 + Best Effort
+        pc_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=DurabilityPolicy.VOLATILE
+        )
+
 
         for key, config in self.my_subscribers.items():
             data_type = config.get("data_type")
@@ -246,7 +260,7 @@ class ElevationMappingNode(Node):
                     PointCloud2,
                     topic_name,
                     partial(self.pointcloud_callback, sub_key=key),
-                    qos_profile
+                    pc_qos
                 )
                 pointcloud_subs[key] = subscription
 
@@ -268,7 +282,7 @@ class ElevationMappingNode(Node):
 
     def register_timers(self) -> None:
         self.time_pose_update = self.create_timer(
-            0.1,
+            0.3,
             self.pose_update
         )
         self.timer_variance = self.create_timer(
@@ -287,8 +301,8 @@ class ElevationMappingNode(Node):
         gm.header.frame_id = self.map_frame
         gm.header.stamp = self.get_clock().now().to_msg()
         gm.info.resolution = self._map.resolution
-        gm.info.length_x = self._map.map_length
-        gm.info.length_y = self._map.map_length
+        gm.info.length_x = self._map.param.true_map_length
+        gm.info.length_y = self._map.param.true_map_length
         gm.info.pose.position.x = self._map_t.x
         gm.info.pose.position.y = self._map_t.y
         gm.info.pose.position.z = 0.0

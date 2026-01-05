@@ -187,6 +187,7 @@ class PluginManager(object):
         rotation=None,
         elements_to_shift={},
         normal_map=None,
+        resolution=None,
     ):
         idx = self.get_layer_index_with_name(name)
         if idx is not None and idx < len(self.plugins):
@@ -194,9 +195,10 @@ class PluginManager(object):
             params = sig.parameters
             n_param = len(params)
             
-            # Check if plugin accepts normal_map or **kwargs
+            # Check if plugin accepts normal_map, resolution, or **kwargs
             accepts_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
             accepts_normal_map = 'normal_map' in params
+            accepts_resolution = 'resolution' in params
             
             # Build positional arguments based on parameter count
             args = [elevation_map, layer_names, self.layers, self.layer_names]
@@ -212,6 +214,8 @@ class PluginManager(object):
             kwargs = {}
             if (accepts_kwargs or accepts_normal_map) and normal_map is not None:
                 kwargs['normal_map'] = normal_map
+            if (accepts_kwargs or accepts_resolution) and resolution is not None:
+                kwargs['resolution'] = resolution
             
             # Call plugin with constructed args and kwargs
             self.layers[idx] = self.plugins[idx](*args, **kwargs)

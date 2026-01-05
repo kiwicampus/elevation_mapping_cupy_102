@@ -8,12 +8,12 @@ elevation_mapping_node:
     corrected_map_frame: 'odom'                 # Frame published when drift correction is enabled (if used).
     
     #### Grid / map geometry 
-    resolution: 0.06                            # Grid cell size [m]. Smaller = more detail, more compute/noise.
+    resolution: 0.1                            # Grid cell size [m]. Smaller = more detail, more compute/noise.
     map_length: 5.0                             # Side length of the square local map window [m].
 
     #### Sensor & outlier handling 
     # lighter point cloud = fewer drops
-    voxel_filter_size: 0.06                     # Voxel downsampling size [m] applied to incoming points.
+    voxel_filter_size: 0.1                     # Voxel downsampling size [m] applied to incoming points.
     sensor_noise_factor: 0.06                   # Depth noise model: σ ≈ sensor_noise_factor * z^2 (z in meters).
 
     # reject obvious bad returns
@@ -34,20 +34,20 @@ elevation_mapping_node:
     max_variance: 100.0                         # Upper cap to keep cell variance numerically stable.
 
     #### Timings & rates 
-    update_variance_fps: 10.0                   # Frequency to update per-cell variances.
-    update_pose_fps: 5.0                       # Frequency to fetch robot pose/shift map center.
-    time_interval: 0.1                         # Interval [s] used to update the "time" layer (if present).
-    map_acquire_fps: 7.0                       # Rate to pull the raw grid from GPU memory.
+    update_variance_fps: 2.0                   # Frequency to update per-cell variances.
+    update_pose_fps: 3.0                       # Frequency to fetch robot pose/shift map center.
+    time_interval: 1.0                         # Interval [s] used to update the "time" layer (if present).
+    map_acquire_fps: 3.0                       # Rate to pull the raw grid from GPU memory.
     publish_statistics_fps: 1.0                 # Rate to publish node statistics/diagnostics.
-    recordable_fps: 3.0                        # Rate-limit for heavy/recordable outputs (e.g., point clouds).
+    recordable_fps: 1.0                        # Rate-limit for heavy/recordable outputs (e.g., point clouds).
 
     #### Visibility cleanup / ray tracing 
-    max_ray_length: 6.0                         # Maximum ray length used for occlusion cleanup [m].
+    max_ray_length: 3.0                         # Maximum ray length used for occlusion cleanup [m].
     cleanup_step: 0.10                          # Amount subtracted from validity during cleanup (stronger if larger).
     cleanup_cos_thresh: 0.35                    # Cosine threshold for angle-based visibility gating.
 
     #### Drift compensation (uses stable, traversable cells) 
-    enable_drift_compensation: true             # Enable TF drift estimation/correction using stable cells.
+    enable_drift_compensation: false             # Enable TF drift estimation/correction using stable cells.
     drift_compensation_variance_inlier: 0.1    # Cells with variance below this are considered stable for drift.
     max_drift: 0.1                             # Only correct if estimated drift magnitude is below this [m/rad].      
     drift_compensation_alpha: 0.1              # Smoothing factor for applying drift corrections. 
@@ -64,7 +64,7 @@ elevation_mapping_node:
     safe_thresh: 0.7                            # Cells with traversability below this are considered unsafe.
     safe_min_thresh: 0.4                        # A polygon is unsafe if any cell falls below this threshold.
     max_unsafe_n: 10                            # Max count of unsafe cells allowed before flagging a region unsafe.
-    checker_layer: 'traversability'                # layer name for checking the validity of the cell.
+    checker_layer: 'elevation'                # layer name for checking the validity of the cell.
 
     #### Overlap clearance (multi-floor)  
     overlap_clear_range_xy: 6.0                 # XY range [m] around robot where overlap clearing is applied.
@@ -74,9 +74,11 @@ elevation_mapping_node:
     enable_edge_sharpen: false                   # Apply edge sharpening to height map.
     enable_visibility_cleanup: false             # Run ray-based cleanup for occlusions.
     enable_overlap_clearance: false             # Enable clearing for multi-floor overlap scenarios.
+    enable_traversability: false                 # Enable traversability calculation (CNN filter). Disable to save computation.
+    enable_semantic_layers: false                # Enable semantic layer processing (requires additional channels in pointclouds). Disable to save computation.
     enable_pointcloud_publishing: false          # Publish map as point cloud (heavier output).
     enable_drift_corrected_TF_publishing: false # Publish drift-corrected TF; keep false for bag playback to avoid TF_OLD_DATA.
-    enable_normal_color: true                  # Add a 'color' layer from normals (requires adding to publishers).
+    enable_normal_color: false                  # Add a 'color' layer from normals (requires adding to publishers).
     enable_normal_arrow_publishing: false       # Publish normal arrows for visualization (RViz).
 
     #### Initializer 

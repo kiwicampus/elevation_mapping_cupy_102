@@ -36,13 +36,13 @@ def generate_launch_description():
 
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time',
-        default_value='false',
+        default_value='true',
         description='Use simulation clock if true'
     )
 
     use_python_node_arg = DeclareLaunchArgument(
         'use_python_node',
-        default_value='false',
+        default_value='true',
         description='Use the Python node if true'
     )
 
