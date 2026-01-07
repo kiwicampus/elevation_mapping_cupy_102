@@ -287,8 +287,8 @@ class ElevationMappingNode(Node):
         gm.header.frame_id = self.map_frame
         gm.header.stamp = self.get_clock().now().to_msg()
         gm.info.resolution = self._map.resolution
-        gm.info.length_x = self._map.map_length
-        gm.info.length_y = self._map.map_length
+        gm.info.length_x = self._map.param.true_map_length
+        gm.info.length_y = self._map.param.true_map_length
         gm.info.pose.position.x = self._map_t.x
         gm.info.pose.position.y = self._map_t.y
         gm.info.pose.position.z = 0.0
