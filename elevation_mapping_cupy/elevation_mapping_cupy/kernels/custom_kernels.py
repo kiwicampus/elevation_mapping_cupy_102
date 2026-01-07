@@ -683,3 +683,43 @@ if __name__ == "__main__":
         print(a)
         plt.imshow(cp.asnumpy(a))
         plt.show()
+
+
+def shift_map_kernel(width, height, initial_variance):
+    shift_map_kernel = cp.ElementwiseKernel(
+        in_params="raw U map, int32 shift_x, int32 shift_y",
+        out_params="raw U newmap",
+        preamble=string.Template(
+            """
+            __device__ int get_map_idx(int idx, int layer_n) {
+                const int layer = ${width} * ${height};
+                return layer * layer_n + idx;
+            }
+            """
+        ).substitute(width=width, height=height),
+        operation=string.Template(
+            """
+            int layer_size = ${width} * ${height};
+            int layer_idx = i / layer_size;
+            int cell_idx = i % layer_size;
+            int x = cell_idx / ${width};
+            int y = cell_idx % ${width};
+
+            int old_x = x - shift_x;
+            int old_y = y - shift_y;
+
+            if (old_x >= 0 && old_x < ${width} && old_y >= 0 && old_y < ${height}) {
+                int old_cell_idx = old_x * ${width} + old_y;
+                newmap[i] = map[layer_idx * layer_size + old_cell_idx];
+            } else {
+                if (layer_idx == 1) {
+                    newmap[i] = ${initial_variance};
+                } else {
+                    newmap[i] = 0.0;
+                }
+            }
+            """
+        ).substitute(width=width, height=height, initial_variance=initial_variance),
+        name="shift_map_kernel",
+    )
+    return shift_map_kernel

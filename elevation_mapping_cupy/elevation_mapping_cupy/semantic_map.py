@@ -10,6 +10,7 @@ import re
 
 
 from elevation_mapping_cupy.fusion.fusion_manager import FusionManager
+from elevation_mapping_cupy.kernels import shift_map_kernel
 
 xp = cp
 
@@ -43,6 +44,7 @@ class SemanticMap:
         # if a layer should not be reset, it is defined in compile_kernels function
         self.delete_new_layers = cp.ones(self.new_map.shape[0], cp.bool_)
         self.fusion_manager = FusionManager(self.param)
+        self.shift_map_kernel = shift_map_kernel(self.param.cell_n, self.param.cell_n, 0.0)
 
     def clear(self):
         """Clear the semantic map."""
@@ -130,13 +132,30 @@ class SemanticMap:
         Args:
             shift_value:
         """
-        self.semantic_map = cp.roll(self.semantic_map, shift_value, axis=(1, 2))
-        self.pad_value(self.semantic_map, shift_value, value=0.0)
-        self.new_map = cp.roll(self.new_map, shift_value, axis=(1, 2))
-        self.pad_value(self.new_map, shift_value, value=0.0)
-        for el in self.elements_to_shift.values():
-            el = cp.roll(el, shift_value, axis=(1, 2))
-            self.pad_value(el, shift_value, value=0.0)
+        sx = int(shift_value[0])
+        sy = int(shift_value[1])
+        
+        # Shift semantic map
+        new_semantic_map = cp.empty_like(self.semantic_map)
+        self.shift_map_kernel(
+            self.semantic_map, sx, sy, new_semantic_map, size=self.semantic_map.size
+        )
+        self.semantic_map = new_semantic_map
+        
+        # Shift new map
+        new_new_map = cp.empty_like(self.new_map)
+        self.shift_map_kernel(
+            self.new_map, sx, sy, new_new_map, size=self.new_map.size
+        )
+        self.new_map = new_new_map
+        
+        # Shift elements
+        for key, el in self.elements_to_shift.items():
+            new_el = cp.empty_like(el)
+            self.shift_map_kernel(
+                el, sx, sy, new_el, size=el.size
+            )
+            self.elements_to_shift[key] = new_el
 
     def get_fusion(
         self, channels: List[str], channel_fusions: Dict[str, str], layer_specs: Dict[str, str]

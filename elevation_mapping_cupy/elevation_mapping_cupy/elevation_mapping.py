@@ -28,6 +28,7 @@ from elevation_mapping_cupy.kernels import dilation_filter_kernel
 from elevation_mapping_cupy.kernels import normal_filter_kernel
 from elevation_mapping_cupy.kernels import polygon_mask_kernel
 from elevation_mapping_cupy.kernels import image_to_map_correspondence_kernel
+from elevation_mapping_cupy.kernels import shift_map_kernel
 
 from elevation_mapping_cupy.map_initializer import MapInitializer
 from elevation_mapping_cupy.plugins.plugin_manager import PluginManager
@@ -211,9 +212,15 @@ class ElevationMap:
         if cp.abs(shift_value).sum() == 0:
             return
         with self.map_lock:
-            self.elevation_map = cp.roll(self.elevation_map, shift_value, axis=(1, 2))
-            self.pad_value(self.elevation_map, shift_value, value=0.0)
-            self.pad_value(self.elevation_map, shift_value, idx=1, value=self.initial_variance)
+            new_map = cp.empty_like(self.elevation_map)
+            self.shift_map_kernel(
+                self.elevation_map,
+                int(shift_value[0]),
+                int(shift_value[1]),
+                new_map,
+                size=self.elevation_map.size
+            )
+            self.elevation_map = new_map
             self.semantic_map.shift_map_xy(shift_value)
 
     def shift_map_z(self, delta_z):
@@ -283,7 +290,9 @@ class ElevationMap:
             self.cell_n, self.cell_n, self.param.dilation_size_initialize
         )
         self.polygon_mask_kernel = polygon_mask_kernel(self.cell_n, self.cell_n, self.resolution)
+        self.polygon_mask_kernel = polygon_mask_kernel(self.cell_n, self.cell_n, self.resolution)
         self.normal_filter_kernel = normal_filter_kernel(self.cell_n, self.cell_n, self.resolution)
+        self.shift_map_kernel = shift_map_kernel(self.cell_n, self.cell_n, self.initial_variance)
 
     def compile_image_kernels(self):
         """Compile kernels related to processing image messages."""

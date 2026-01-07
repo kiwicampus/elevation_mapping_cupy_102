@@ -2,6 +2,7 @@
 import numpy as np
 import os
 from functools import partial
+import array
 
 import rclpy
 from rclpy.node import Node
@@ -307,7 +308,10 @@ class ElevationMappingNode(Node):
             N = self._map_data.shape[0]
             arr.layout.dim.append(MAD(label="column_index", size=N, stride=int(N * N)))
             arr.layout.dim.append(MAD(label="row_index", size=N, stride=N))
-            arr.data = self._map_data.T.flatten().tolist()
+            # arr.data = self._map_data.T.flatten().tolist()
+            a = array.array('f')
+            a.frombytes(self._map_data.T.tobytes())
+            arr.data = a
             gm.data.append(arr)
 
         gm.outer_start_index = 0
