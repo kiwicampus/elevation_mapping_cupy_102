@@ -8,11 +8,6 @@ from typing import List, Any, Tuple, Union
 import numpy as np
 import threading
 import subprocess
-
-from elevation_mapping_cupy.traversability_filter import (
-    get_filter_chainer,
-    get_filter_torch,
-)
 from elevation_mapping_cupy.parameter import Parameter
 
 from elevation_mapping_cupy.kernels import (
@@ -83,6 +78,9 @@ class ElevationMap:
         # buffers
         self.traversability_buffer = xp.full((self.cell_n, self.cell_n), xp.nan)
         self.normal_map = xp.zeros((3, self.cell_n, self.cell_n), dtype=self.data_type)
+        # Incremented each time the map is updated; used to avoid recomputing plugin layers repeatedly during publish.
+        self._map_update_seq = 0
+        self._plugin_last_update_seq = {}
         # Initial variance
         self.initial_variance = param.initial_variance
         self.elevation_map[1] += self.initial_variance
@@ -104,13 +102,21 @@ class ElevationMap:
 
         self.semantic_map.initialize_fusion()
 
-        weight_file = subprocess.getoutput('echo "' + param.weight_file + '"')
-        param.load_weights(weight_file)
+        # Traversability filter is optional (e.g. if you only need plugin layers like slope).
+        self.traversability_filter = None
+        if getattr(param, "enable_traversability", True):
+            # Lazy import to avoid importing torch/chainer backends when traversability is disabled.
+            from elevation_mapping_cupy.traversability_filter import (
+                get_filter_chainer,
+                get_filter_torch,
+            )
+            weight_file = subprocess.getoutput('echo "' + param.weight_file + '"')
+            param.load_weights(weight_file)
 
-        if param.use_chainer:
-            self.traversability_filter = get_filter_chainer(param.w1, param.w2, param.w3, param.w_out)
-        else:
-            self.traversability_filter = get_filter_torch(param.w1, param.w2, param.w3, param.w_out)
+            if param.use_chainer:
+                self.traversability_filter = get_filter_chainer(param.w1, param.w2, param.w3, param.w_out)
+            else:
+                self.traversability_filter = get_filter_torch(param.w1, param.w2, param.w3, param.w_out)
         self.untraversable_polygon = xp.zeros((1, 2))
 
         # Plugins
@@ -395,22 +401,38 @@ class ElevationMap:
             if self.param.enable_overlap_clearance:
                 self.clear_overlap_map(t)
 
-            self.traversability_input *= 0.0
-            self.dilation_filter_kernel(
-                self.elevation_map[5],
-                self.elevation_map[2] + self.elevation_map[6],
-                self.traversability_input,
-                self.traversability_mask_dummy,
-                size=(self.cell_n * self.cell_n),
-            )
+            if getattr(self.param, "enable_traversability", True):
+                self.traversability_input *= 0.0
+                self.dilation_filter_kernel(
+                    self.elevation_map[5],
+                    self.elevation_map[2] + self.elevation_map[6],
+                    self.traversability_input,
+                    self.traversability_mask_dummy,
+                    size=(self.cell_n * self.cell_n),
+                )
 
-            traversability = self.traversability_filter(self.traversability_input)
-            self.elevation_map[3][3:-3, 3:-3] = traversability.reshape(
-                (traversability.shape[2], traversability.shape[3])
-            )
+                # traversability_filter is only available when enable_traversability is True
+                traversability = self.traversability_filter(self.traversability_input)
+                self.elevation_map[3][3:-3, 3:-3] = traversability.reshape(
+                    (traversability.shape[2], traversability.shape[3])
+                )
+            else:
+                # If traversability is disabled, still build a "filled" surface for stable normal estimation.
+                # This avoids using potentially-invalid neighbors in the normal kernel near holes.
+                self.traversability_input *= 0.0
+                self.dilation_filter_kernel(
+                    self.elevation_map[0],
+                    self.elevation_map[2],
+                    self.traversability_input,
+                    self.traversability_mask_dummy,
+                    size=(self.cell_n * self.cell_n),
+                )
 
-        # Log final state
+        # Normals are used by plugins (e.g. slope) and visibility cleanup.
+        # When traversability is disabled we still update normals using a filled elevation surface.
         self.update_normal(self.traversability_input)
+        # Mark a new "frame" of map data available for plugin caching.
+        self._map_update_seq += 1
 
     def clear_overlap_map(self, t):
         """Clear overlapping areas around the map center.
@@ -778,16 +800,19 @@ class ElevationMap:
             elif name in self.semantic_map.layer_names:
                 m = self.semantic_map.get_map_with_name(name)
             elif name in self.plugin_manager.layer_names:
-                self.plugin_manager.update_with_name(
-                    name,
-                    self.elevation_map,
-                    self.layer_names,
-                    self.semantic_map.semantic_map,
-                    self.semantic_map.layer_names,
-                    self.base_rotation,
-                    self.semantic_map.elements_to_shift,
-                    normal_map=self.normal_map,
-                )
+                # Compute each plugin layer at most once per map update (publishing can request the same layer many times).
+                if self._plugin_last_update_seq.get(name) != self._map_update_seq:
+                    self.plugin_manager.update_with_name(
+                        name,
+                        self.elevation_map,
+                        self.layer_names,
+                        self.semantic_map.semantic_map,
+                        self.semantic_map.layer_names,
+                        self.base_rotation,
+                        self.semantic_map.elements_to_shift,
+                        normal_map=self.normal_map,
+                    )
+                    self._plugin_last_update_seq[name] = self._map_update_seq
                 m = self.plugin_manager.get_map_with_name(name)
                 p = self.plugin_manager.get_param_with_name(name)
                 xp = self.xp_of_array(m)

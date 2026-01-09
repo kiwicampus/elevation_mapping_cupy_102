@@ -96,6 +96,8 @@ class Parameter(Serializable):
                                    (Default: ``True``)
         enable_visibility_cleanup: Enable visibility cleanup.  
                                    (Default: ``True``)
+        enable_traversability: Enable traversability.  
+                               (Default: ``False``)
         enable_overlap_clearance: Enable overlap clearance.  
                                   (Default: ``True``)
         use_only_above_for_upper_bound: Use only above for upper bound.  
@@ -198,6 +200,7 @@ class Parameter(Serializable):
     enable_drift_compensation: bool = True  # enable drift compensation
     enable_visibility_cleanup: bool = True  # enable visibility cleanup
     enable_overlap_clearance: bool = True  # enable overlap clearance
+    enable_traversability: bool = False  # enable traversability layer/filter computation (disable if you only need plugins like slope)
     use_only_above_for_upper_bound: bool = True  # use only above for upper bound
     use_chainer: bool = True  # use chainer as a backend of traversability filter or pytorch. If false, it uses pytorch. pytorch requires ~2GB more GPU memory compared to chainer but runs faster.
     position_noise_thresh: float = 0.1  # if the position change is bigger than this value, the drift compensation happens.

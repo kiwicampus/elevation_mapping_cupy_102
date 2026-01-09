@@ -23,6 +23,7 @@ from std_msgs.msg import MultiArrayLayout as MAL
 from std_msgs.msg import MultiArrayDimension as MAD
 from rclpy.serialization import serialize_message
 from elevation_mapping_cupy import ElevationMap, Parameter
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 PDC_DATATYPE = {
     "1": np.int8,
@@ -201,6 +202,8 @@ class ElevationMappingNode(Node):
         except: pass
         try: self.param.enable_overlap_clearance = self.get_parameter('enable_overlap_clearance').get_parameter_value().bool_value
         except: pass
+        try: self.param.enable_traversability = self.get_parameter('enable_traversability').get_parameter_value().bool_value
+        except: pass
         try: self.param.use_only_above_for_upper_bound = self.get_parameter('use_only_above_for_upper_bound').get_parameter_value().bool_value
         except: pass
 
@@ -210,6 +213,14 @@ class ElevationMappingNode(Node):
 
         pointcloud_subs = {}
         image_subs = {}
+
+        # Define explicit QoS for PointCloud: Depth 1 + Best Effort
+        pc_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=DurabilityPolicy.VOLATILE
+        )
 
         for key, config in self.my_subscribers.items():
             data_type = config.get("data_type")
@@ -247,7 +258,7 @@ class ElevationMappingNode(Node):
                     PointCloud2,
                     topic_name,
                     partial(self.pointcloud_callback, sub_key=key),
-                    qos_profile
+                    pc_qos
                 )
                 pointcloud_subs[key] = subscription
 
@@ -269,7 +280,7 @@ class ElevationMappingNode(Node):
 
     def register_timers(self) -> None:
         self.time_pose_update = self.create_timer(
-            0.1,
+            0.3,
             self.pose_update
         )
         self.timer_variance = self.create_timer(
@@ -479,24 +490,75 @@ class ElevationMappingNode(Node):
                 self.get_logger().warn(f"Unexpected point cloud structure, attempting fallback")
                 return
             
-            # Append additional channels
+            # Append additional channels (avoid repeated np.hstack in a loop: it reallocates/copies each time)
+            extra_cols = []
+            n_pts = pts.shape[0]
             for channel in additional_channels:
-                if channel in points:
-                    data = np.array(points[channel]).flatten()
-                    if data.ndim == 1:
-                        data = data[:, np.newaxis]
-                    pts = np.hstack((pts, data))
+                if channel not in points:
+                    continue
+                data = np.asarray(points[channel])
+                # Most channels are per-point scalars; keep it as a single column without extra copies.
+                if data.ndim == 1:
+                    if data.shape[0] != n_pts:
+                        self.get_logger().warn(
+                            f"Channel '{channel}' has length {data.shape[0]} but expected {n_pts}; skipping."
+                        )
+                        continue
+                    data = data.reshape(n_pts, 1)
+                elif data.ndim == 2:
+                    # Accept (N,k). If it's (k,N) by mistake, transpose.
+                    if data.shape[0] == n_pts:
+                        pass
+                    elif data.shape[1] == n_pts:
+                        data = data.T
+                    else:
+                        self.get_logger().warn(
+                            f"Channel '{channel}' has shape {data.shape} but expected ({n_pts},k); skipping."
+                        )
+                        continue
+                else:
+                    # Flatten higher-dim channels into columns if total count matches.
+                    flat = data.reshape(-1)
+                    if flat.shape[0] != n_pts:
+                        self.get_logger().warn(
+                            f"Channel '{channel}' has {flat.shape[0]} elements but expected {n_pts}; skipping."
+                        )
+                        continue
+                    data = flat.reshape(n_pts, 1)
+                extra_cols.append(data)
+
+            if extra_cols:
+                pts = np.concatenate([pts, *extra_cols], axis=1)
         else:
             # Use standard method for structured arrays
             pts = rnp.point_cloud2.get_xyz_points(points)
-            # TODO: This is probably expensive. Consider modifying rnp or input_pointcloud()
-            # Append additional channels to pts
+            # TODO: rnp.point_cloud2.get_xyz_points() can be expensive; if needed, optimize upstream.
+            # Append additional channels (single concatenate to avoid repeated reallocations)
+            extra_cols = []
+            n_pts = pts.shape[0]
             for channel in additional_channels:
-                if hasattr(points, 'dtype') and hasattr(points.dtype, 'names') and channel in points.dtype.names:
-                    data = points[channel].flatten()
-                    if data.ndim == 1:
-                        data = data[:, np.newaxis]
-                    pts = np.hstack((pts, data))
+                if not (hasattr(points, 'dtype') and hasattr(points.dtype, 'names') and channel in points.dtype.names):
+                    continue
+                data = np.asarray(points[channel])
+                if data.ndim == 1:
+                    if data.shape[0] != n_pts:
+                        continue
+                    data = data.reshape(n_pts, 1)
+                elif data.ndim == 2:
+                    if data.shape[0] == n_pts:
+                        pass
+                    elif data.shape[1] == n_pts:
+                        data = data.T
+                    else:
+                        continue
+                else:
+                    flat = data.reshape(-1)
+                    if flat.shape[0] != n_pts:
+                        continue
+                    data = flat.reshape(n_pts, 1)
+                extra_cols.append(data)
+            if extra_cols:
+                pts = np.concatenate([pts, *extra_cols], axis=1)
         self._map.input_pointcloud(pts, channels, R, t_np, 0, 0)
         self._pointcloud_process_counter += 1
 

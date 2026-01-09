@@ -17,7 +17,7 @@ slope:
     output_units: "degrees"                   # Output in degrees [0, 90]
        
     # 1. Spatial Filter (Median): Reduces high-frequency sensor noise (e.g., "salt-and-pepper").
-    spatial_filter_size: 5                    # Kernel size (6x6). Higher value = more smoothing.
+    spatial_filter_size: 3                    # Kernel size (5x5). Higher value = more smoothing.
                                               # To DISABLE: Set to 1.
     
     # 2. Temporal Smoothing (Exponential Moving Average / EMA)

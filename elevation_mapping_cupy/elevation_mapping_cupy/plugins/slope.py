@@ -27,7 +27,8 @@ class Slope(PluginBase):
         output_units: str = "degrees",
         # Filtering Parameters
         max_variance_threshold: float = 0.11, # Max variance threshold (Guardrail). Data > 0.11 is penalized.
-        spatial_filter_size: int = 6,         # Kernel size for the spatial median filter (e.g., 6x6).
+        spatial_filter_size: int = 6,         # Kernel size for the spatial filter (e.g., 6x6). Set <=1 to disable.
+        spatial_filter_type: str = "median",  # "median" (robust but expensive), "uniform" (fast), "none"
         temporal_alpha: float = 0.7,          # EMA factor (Alpha). 1.0 = no smoothing, 0.0 = max smoothing.
         time_decay: float = 15.0,             # Time decay factor for confidence (seconds).
         **kwargs,
@@ -40,6 +41,7 @@ class Slope(PluginBase):
         # Store configuration parameters
         self.max_variance_threshold = float(max_variance_threshold)
         self.spatial_filter_size = spatial_filter_size
+        self.spatial_filter_type = str(spatial_filter_type).lower()
         self.temporal_alpha = float(max(0.0, min(1.0, temporal_alpha)))
         self.time_decay = float(time_decay)
         
@@ -51,13 +53,24 @@ class Slope(PluginBase):
 
     def _apply_spatial_filter(self, normal_x: cp.ndarray, normal_y: cp.ndarray, normal_z: cp.ndarray) -> tuple:
         """
-        Applies spatial median filtering to the normal vectors.
-        Median filter preserves edges better than mean/Gaussian while removing "salt-and-pepper" noise.
+        Applies spatial filtering to the normal vectors.
+        - median: robust to spikes but expensive
+        - uniform: fast smoothing
+        - none / size<=1: disabled
         """
         size = self.spatial_filter_size
-        nx = ndimage.median_filter(normal_x, size=size)
-        ny = ndimage.median_filter(normal_y, size=size)
-        nz = ndimage.median_filter(normal_z, size=size)
+        if size is None or int(size) <= 1 or self.spatial_filter_type in ("none", "off", "false", "0"):
+            return normal_x, normal_y, normal_z
+
+        if self.spatial_filter_type == "uniform":
+            nx = ndimage.uniform_filter(normal_x, size=size)
+            ny = ndimage.uniform_filter(normal_y, size=size)
+            nz = ndimage.uniform_filter(normal_z, size=size)
+        else:
+            # default: median
+            nx = ndimage.median_filter(normal_x, size=size)
+            ny = ndimage.median_filter(normal_y, size=size)
+            nz = ndimage.median_filter(normal_z, size=size)
         return nx, ny, nz
 
     def _apply_temporal_smoothing(
@@ -75,7 +88,7 @@ class Slope(PluginBase):
         
         # Initialize history on the first call
         if not self.initialized or self.previous_normals is None:
-            self.previous_normals = current_normals.copy()
+            self.previous_normals = current_normals
             self.initialized = True
             return normal_x, normal_y, normal_z
         
@@ -90,7 +103,7 @@ class Slope(PluginBase):
         )
         
         # Update history for the next iteration
-        self.previous_normals = smoothed_normals.copy()
+        self.previous_normals = smoothed_normals
         
         return smoothed_normals[0], smoothed_normals[1], smoothed_normals[2]
 
@@ -134,13 +147,16 @@ class Slope(PluginBase):
         
         # 1. Get Normal Vectors from System (Assumed to be provided by the elevation mapping core)
         normal_map = kwargs.get('normal_map', None)
-        normal_x, normal_y, normal_z = normal_map[0].copy(), normal_map[1].copy(), normal_map[2].copy()
+        if normal_map is None:
+            raise ValueError("[Slope] normal_map was not provided. Ensure ElevationMap passes normal_map into PluginManager.update_with_name().")
+        # Avoid unnecessary copies; filters will allocate outputs as needed.
+        normal_x, normal_y, normal_z = normal_map[0], normal_map[1], normal_map[2]
             
         # 2. Get Auxiliary Layers (variance, is_valid, time)
         # These layers are crucial for robust filtering and confidence weighting.
-        variance = elevation_map[1].copy()
-        is_valid = elevation_map[2].copy()
-        time_layer = elevation_map[4].copy() if len(elevation_map) > 4 else None
+        variance = elevation_map[1]
+        is_valid = elevation_map[2]
+        time_layer = elevation_map[4] if len(elevation_map) > 4 else None
         
         # 3. Stage: Spatial Filter (Smooths out high-frequency sensor noise)
         normal_x, normal_y, normal_z = self._apply_spatial_filter(normal_x, normal_y, normal_z)

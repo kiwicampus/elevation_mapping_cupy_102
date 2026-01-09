@@ -52,6 +52,9 @@ elevation_mapping_node:
       #   basic_layers: ['elevation', 'traversability']
       #   fps: 2.0
       elevation_map_filter:
-        layers: ['traversability', 'elevation', 'normal_x', 'normal_y', 'normal_z', 'slope']
+        # `normal_x|normal_y|normal_z` are raw normals from ElevationMap.normal_map (3xHxW),
+        # exposed via ElevationMap.get_map_with_name_ref().
+        layers: ['elevation', 'slope', 'normal_x', 'normal_y', 'normal_z']
         basic_layers: ['elevation']
-        fps: 7.0
+        fps: 4.0
+

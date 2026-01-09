@@ -200,15 +200,6 @@ ElevationMappingNode::ElevationMappingNode(const rclcpp::NodeOptions& options)
                 channels_[key].push_back("y");
                 channels_[key].push_back("z");
 
-                // rmw_qos_profile_t qos_profile = rmw_qos_profile_default;
-                // auto qos = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, qos_profile.depth),
-                // qos_profile);
-
-                rmw_qos_profile_t sensor_qos_profile = rmw_qos_profile_sensor_data;
-                auto sensor_qos =
-                    rclcpp::QoS(rclcpp::QoSInitialization(sensor_qos_profile.history, sensor_qos_profile.depth),
-                                sensor_qos_profile);
-
                 // point_cloud_transport::Subscriber pct_sub = pct.subscribe(
                 //     "pct/point_cloud", 100,
                 //     [node](const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg)
@@ -229,7 +220,14 @@ ElevationMappingNode::ElevationMappingNode(const rclcpp::NodeOptions& options)
 
                 // Use PointCloudTransport to create a subscriber
                 point_cloud_transport::PointCloudTransport pct(node_);
-                auto sub_transport = pct.subscribe(pointcloud_topic, 100, callback_transport);
+                // Explicitly use a low-latency sensor QoS for pointcloud input:
+                // reliability=BEST_EFFORT, history=KEEP_LAST, depth=1, durability=VOLATILE
+                rmw_qos_profile_t cloud_qos = rmw_qos_profile_sensor_data;
+                cloud_qos.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
+                cloud_qos.depth = 1;
+                cloud_qos.reliability = RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT;
+                cloud_qos.durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+                auto sub_transport = pct.subscribe(pointcloud_topic, cloud_qos, callback_transport);
 
                 // Add the subscriber to the vector to manage its lifetime
                 pointcloudtransportSubs_.push_back(sub_transport);
