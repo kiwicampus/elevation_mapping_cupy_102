@@ -499,6 +499,9 @@ class ElevationMap:
         """
         raw_points = cp.asarray(raw_points, dtype=self.data_type)
         
+        if raw_points.size == 0:
+            return
+
         # Check for the sanity of the raw points
         min_points = cp.min(raw_points, axis=0)
         max_points = cp.max(raw_points, axis=0)

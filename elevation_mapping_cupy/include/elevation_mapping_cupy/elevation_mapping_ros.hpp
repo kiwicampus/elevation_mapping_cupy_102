@@ -29,6 +29,7 @@
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <std_srvs/srv/set_bool.hpp>
+#include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include "message_filters/subscriber.h"
 #include "message_filters/sync_policies/approximate_time.h"
 #include "message_filters/synchronizer.h"
@@ -56,7 +57,6 @@
 #include <opencv2/core/eigen.hpp>
 
 #include <elevation_map_msgs/msg/channel_info.hpp>
-#include <elevation_map_msgs/msg/statistics.hpp>
 #include <elevation_map_msgs/srv/check_safety.hpp>
 #include <elevation_map_msgs/srv/initialize.hpp>
 
@@ -182,7 +182,6 @@ class ElevationMappingNode : public rclcpp::Node
     rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr alivePub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointPub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr normalPub_;
-    rclcpp::Publisher<elevation_map_msgs::msg::Statistics>::SharedPtr statisticsPub_;
     rclcpp::Service<grid_map_msgs::srv::GetGridMap>::SharedPtr rawSubmapService_;
     rclcpp::Service<std_srvs::srv::Empty>::SharedPtr clearMapService_;
     rclcpp::Service<std_srvs::srv::Empty>::SharedPtr clearMapWithInitializerService_;
@@ -240,10 +239,16 @@ class ElevationMappingNode : public rclcpp::Node
     bool useInitializerAtStart_;
     double initializeTfGridSize_;
     bool alwaysClearWithInitializer_;
+    bool enableStatistics_;
     std::atomic_int pointCloudProcessCounter_;
 
     std::map<std::string, std::pair<sensor_msgs::msg::CameraInfo, bool>> imageInfoReady_;
     std::map<std::string, std::pair<elevation_map_msgs::msg::ChannelInfo, bool>> imageChannelReady_;
+
+    rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnosticPub_;
+    std::map<std::string, double> processingAccumulatedTime_;
+    std::map<std::string, int> processingCounter_;
+    std::mutex diagnosticsMutex_;
 };
 
 }  // namespace elevation_mapping_cupy

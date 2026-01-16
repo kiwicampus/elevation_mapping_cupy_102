@@ -54,7 +54,6 @@ elevation_mapping_node:
       elevation_map_filter:
         # `normal_x|normal_y|normal_z` are raw normals from ElevationMap.normal_map (3xHxW),
         # exposed via ElevationMap.get_map_with_name_ref().
-        layers: ['elevation', 'slope', 'normal_x', 'normal_y', 'normal_z']
+        layers: ['elevation', 'slope']
         basic_layers: ['elevation']
         fps: 4.0
-

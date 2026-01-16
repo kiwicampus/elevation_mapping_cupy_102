@@ -116,3 +116,11 @@ class TestElevationMap:
         data = np.zeros((200, 200), dtype=np.float32)
         for layer in layers:
             elmap_ex.get_map_with_name_ref(layer, data)
+
+    def test_input_empty(self, elmap_ex):
+        channels = ["x", "y", "z"] + elmap_ex.param.additional_layers
+        points = cp.array([], dtype=elmap_ex.param.data_type).reshape(0, len(channels))
+        R = cp.eye(3, dtype=elmap_ex.param.data_type)
+        t = cp.zeros(3, dtype=elmap_ex.param.data_type)
+        # This should not crash
+        elmap_ex.input_pointcloud(points, channels, R, t, 0, 0)

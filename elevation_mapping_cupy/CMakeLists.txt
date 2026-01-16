@@ -46,6 +46,7 @@ find_package(pcl_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(python_cmake_module REQUIRED)
 find_package(point_cloud_transport REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 
 # List dependencies for ament_target_dependencies
 set(dependencies
@@ -64,6 +65,7 @@ set(dependencies
   message_filters
   tf2_eigen
   point_cloud_transport
+  diagnostic_msgs
 )
 
 # Include directories

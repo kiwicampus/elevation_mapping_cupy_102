@@ -9,7 +9,7 @@ elevation_mapping_node:
     
     #### Grid / map geometry 
     resolution: 0.1                            # Grid cell size [m]. Smaller = more detail, more compute/noise.
-    map_length: 5.0                             # Side length of the square local map window [m].
+    map_length: 6.0                             # Side length of the square local map window [m].
 
     #### Sensor & outlier handling 
     # lighter point cloud = fewer drops
@@ -17,7 +17,7 @@ elevation_mapping_node:
     sensor_noise_factor: 0.06                   # Depth noise model: σ ≈ sensor_noise_factor * z^2 (z in meters).
 
     # reject obvious bad returns
-    min_valid_distance: 0.20                    # Discard points closer than this range [m].
+    min_valid_distance: 0.50                    # Discard points closer than this range [m].
     max_height_range: 0.65                       # Discard points with height above this from the sensor [m] (e.g., ceiling). 
     mahalanobis_thresh: 1.5                     # Outlier cutoff in Mahalanobis distance; lower = stricter.
     outlier_variance: 0.01                      # Added variance for outlier hits to reduce their fusion influence.
@@ -35,7 +35,7 @@ elevation_mapping_node:
 
     #### Timings & rates 
     update_variance_fps: 5.0                   # Frequency to update per-cell variances.
-    update_pose_fps: 5.0                       # Frequency to fetch robot pose/shift map center.
+    update_pose_fps: 4.0                       # Frequency to fetch robot pose/shift map center.
     time_interval: 0.1                         # Interval [s] used to update the "time" layer (if present).
     map_acquire_fps: 4.0                       # Rate to pull the raw grid from GPU memory.
     publish_statistics_fps: 1.0                 # Rate to publish node statistics/diagnostics.
@@ -47,7 +47,7 @@ elevation_mapping_node:
     cleanup_cos_thresh: 0.35                    # Cosine threshold for angle-based visibility gating.
 
     #### Drift compensation (uses stable, traversable cells) 
-    enable_drift_compensation: true             # Enable TF drift estimation/correction using stable cells.
+    enable_drift_compensation: false             # Enable TF drift estimation/correction using stable cells.
     drift_compensation_variance_inlier: 0.1    # Cells with variance below this are considered stable for drift.
     max_drift: 0.1                             # Only correct if estimated drift magnitude is below this [m/rad].      
     drift_compensation_alpha: 0.1              # Smoothing factor for applying drift corrections. 

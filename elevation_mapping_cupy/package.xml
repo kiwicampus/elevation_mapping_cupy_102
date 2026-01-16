@@ -18,7 +18,8 @@
     <!-- Comment out to build only with python -->
     <depend>rclcpp</depend>
     <depend>std_msgs</depend>
-    <depend>std_srvs</depend>    
+    <depend>std_srvs</depend>
+    <depend>diagnostic_msgs</depend>  
     <depend>sensor_msgs</depend>
     <depend>geometry_msgs</depend>
     <!-- Might need to remove point_cloud_transport if not used -->

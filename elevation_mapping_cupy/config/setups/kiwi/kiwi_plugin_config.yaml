@@ -33,7 +33,7 @@ slope:
                                               # To DISABLE: Set to a high value like 100.0.
     
     # Controls how quickly old data fades away (time-based penalization).
-    time_decay: 15.0                          # Time (seconds) until data confidence significantly drops.
+    time_decay: 10.0                          # Time (seconds) until data confidence significantly drops.
                                               # To DISABLE: Set to a very high value (e.g., 1000.0).
 
 # erosion:
