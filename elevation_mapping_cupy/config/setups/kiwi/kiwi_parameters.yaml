@@ -35,9 +35,9 @@ elevation_mapping_node:
 
     #### Timings & rates 
     update_variance_fps: 5.0                   # Frequency to update per-cell variances.
-    update_pose_fps: 4.0                       # Frequency to fetch robot pose/shift map center.
+    update_pose_fps: 8.0                       # Frequency to fetch robot pose/shift map center.
     time_interval: 0.1                         # Interval [s] used to update the "time" layer (if present).
-    map_acquire_fps: 4.0                       # Rate to pull the raw grid from GPU memory.
+    map_acquire_fps: 8.0                       # Rate to pull the raw grid from GPU memory.
     publish_statistics_fps: 1.0                 # Rate to publish node statistics/diagnostics.
     recordable_fps: 3.0                        # Rate-limit for heavy/recordable outputs (e.g., point clouds).
 
