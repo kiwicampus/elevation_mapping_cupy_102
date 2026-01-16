@@ -56,4 +56,4 @@ elevation_mapping_node:
         # exposed via ElevationMap.get_map_with_name_ref().
         layers: ['elevation', 'slope']
         basic_layers: ['elevation']
-        fps: 4.0
+        fps: 8.0
