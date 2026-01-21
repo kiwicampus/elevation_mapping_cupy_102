@@ -93,7 +93,7 @@ elevation_mapping_node:
     weight_file: '/workspace/rover/ros2/src/elevation_mapping_cupy/elevation_mapping_cupy/config/core/weights.dat'  # CNN weights.
 
     #### Upper bound 
-    use_only_above_for_upper_bound: false        # For upper-bound estimation, use only measurements above cell height.
+    use_only_above_for_upper_bound: false        # For  upper-bound estimation, use only measurements above cell height.
 
     #### Default Plugins 
     plugin_config_file: '/workspace/rover/ros2/src/navigation/config/elevation_mapping_kiwi_plugin_config.yaml' # Layer/filter plugins. This will be overridden by elevation_mapping_plugin_config_file parameter.
