@@ -1,3 +1,5 @@
+#These parameters are deprecated, use the parameters in the navigation package instead.
+
 elevation_mapping_node:
   ros__parameters:
     #### Channel Fusions ########

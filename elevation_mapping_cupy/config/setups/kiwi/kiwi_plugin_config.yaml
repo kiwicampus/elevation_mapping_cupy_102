@@ -1,3 +1,5 @@
+#These parameters are deprecated, use the parameters in the navigation package instead.
+
 # min_filter:                                   
 #   enable: True                                # weather to load this plugin
 #   fill_nan: True                             # Fill nans to invalid cells of elevation layer.

@@ -10,16 +10,17 @@ from launch_ros.descriptions import ParameterFile
 def generate_launch_description():
     package_name = 'elevation_mapping_cupy'
     share_dir = get_package_share_directory(package_name)
+    navigation_share_dir = get_package_share_directory('navigation')
 
     # Define paths
-    core_param_path = os.path.join(share_dir, 'config', 'setups', 'kiwi', 'kiwi_parameters.yaml')
+    core_param_path = os.path.join(navigation_share_dir, 'config', 'elevation_mapping_kiwi_parameters.yaml')
 
     # Declare launch arguments
     robot_param_arg = DeclareLaunchArgument(
         'robot_config',
         # default_value='turtle_bot/turle_bot_simple.yaml',
-        default_value='kiwi/kiwi_sensor_parameter.yaml',
-        description='Name of the robot-specific config file within config/setups/'
+        default_value='elevation_mapping_kiwi_sensor_parameter.yaml',
+        description='Name of the robot-specific config file within navigation/config/'
     )
 
     launch_rviz_arg = DeclareLaunchArgument(
@@ -48,7 +49,7 @@ def generate_launch_description():
 
     # Get launch configurations
     robot_config = LaunchConfiguration('robot_config')
-    robot_param_path = PathJoinSubstitution([share_dir, 'config', 'setups', robot_config])
+    robot_param_path = PathJoinSubstitution([navigation_share_dir, 'config', robot_config])
     launch_rviz = LaunchConfiguration('launch_rviz')
     rviz_config = LaunchConfiguration('rviz_config')
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -68,6 +69,7 @@ def generate_launch_description():
         parameters=[
             ParameterFile(core_param_path, allow_substs=True),
             robot_param_path,
+            {'plugin_config_file': os.path.join(navigation_share_dir, 'config', 'elevation_mapping_kiwi_plugin_config.yaml')},
             {'use_sim_time': use_sim_time}
         ],
         condition=IfCondition(use_python_node)
@@ -82,6 +84,7 @@ def generate_launch_description():
         parameters=[
             ParameterFile(core_param_path, allow_substs=True),
             robot_param_path,
+            {'plugin_config_file': os.path.join(navigation_share_dir, 'config', 'elevation_mapping_kiwi_plugin_config.yaml')},
             {'use_sim_time': use_sim_time}
         ],
         condition=UnlessCondition(use_python_node)
