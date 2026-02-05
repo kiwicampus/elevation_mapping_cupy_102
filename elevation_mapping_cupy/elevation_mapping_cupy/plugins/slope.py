@@ -48,8 +48,8 @@ class Slope(PluginBase):
         # Storage for temporal smoothing (history of normals)
         self.previous_normals: Optional[cp.ndarray] = None
         self.initialized = False
-        
-        print(f"[Slope] Initialized with Spatial, Temporal Filtering, and Confidence Weighting.")
+
+        print("[Slope] Initialized with Spatial, Temporal Filtering, and Confidence Weighting.")
 
     def _apply_spatial_filter(self, normal_x: cp.ndarray, normal_y: cp.ndarray, normal_z: cp.ndarray) -> tuple:
         """

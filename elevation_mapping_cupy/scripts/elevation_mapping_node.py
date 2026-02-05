@@ -487,7 +487,7 @@ class ElevationMappingNode(Node):
                 pts = np.column_stack((x, y, z))
             else:
                 # Fallback: try to use any available method
-                self.get_logger().warn(f"Unexpected point cloud structure, attempting fallback")
+                self.get_logger().warn("Unexpected point cloud structure, attempting fallback")
                 return
             
             # Append additional channels (avoid repeated np.hstack in a loop: it reallocates/copies each time)
