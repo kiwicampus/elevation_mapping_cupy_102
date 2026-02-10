@@ -16,6 +16,8 @@
 #include <pybind11/embed.h>  // everything needed for embedding
 #include <rclcpp/qos.hpp>
 // ROS2
+#include <diagnostic_msgs/msg/diagnostic_array.hpp>
+#include <diagnostic_updater/diagnostic_updater.hpp>
 #include <geometry_msgs/msg/polygon_stamped.hpp>
 #include <image_transport/image_transport.hpp>
 #include <image_transport/subscriber_filter.hpp>
@@ -29,7 +31,6 @@
 #include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <std_srvs/srv/set_bool.hpp>
-#include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include "message_filters/subscriber.h"
 #include "message_filters/sync_policies/approximate_time.h"
 #include "message_filters/synchronizer.h"
@@ -147,7 +148,7 @@ class ElevationMappingNode : public rclcpp::Node
     void updateTime();
     void updatePose();
     void updateGridMap();
-    void publishStatistics();
+    void diagnosticTask(diagnostic_updater::DiagnosticStatusWrapper& status);
 
     void publishNormalAsArrow(const grid_map::GridMap& map) const;
     void initializeWithTF();
@@ -245,7 +246,7 @@ class ElevationMappingNode : public rclcpp::Node
     std::map<std::string, std::pair<sensor_msgs::msg::CameraInfo, bool>> imageInfoReady_;
     std::map<std::string, std::pair<elevation_map_msgs::msg::ChannelInfo, bool>> imageChannelReady_;
 
-    rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnosticPub_;
+    std::shared_ptr<diagnostic_updater::Updater> updater_;
     std::map<std::string, double> processingAccumulatedTime_;
     std::map<std::string, int> processingCounter_;
     std::mutex diagnosticsMutex_;

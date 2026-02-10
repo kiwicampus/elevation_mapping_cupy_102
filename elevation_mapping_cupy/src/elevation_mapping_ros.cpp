@@ -100,9 +100,12 @@ ElevationMappingNode::ElevationMappingNode(const rclcpp::NodeOptions& options)
 
     enablePointCloudPublishing_ = enablePointCloudPublishing;
     enableStatistics_ = (publishStatisticsFps > 0.0);
-    if (enableStatistics_) {
+    if (enableStatistics_)
+    {
         RCLCPP_INFO(this->get_logger(), "Diagnostics enabled (publish_statistics_fps = %f)", publishStatisticsFps);
-    } else {
+    }
+    else
+    {
         RCLCPP_INFO(this->get_logger(), "Diagnostics disabled (publish_statistics_fps = %f)", publishStatisticsFps);
     }
 
@@ -295,8 +298,14 @@ ElevationMappingNode::ElevationMappingNode(const rclcpp::NodeOptions& options)
     pointPub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("elevation_map_points", 1);
     alivePub_ = this->create_publisher<std_msgs::msg::Empty>("elevation_mapping_node/alive", 1);
     normalPub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("elevation_mapping_node/normal", 1);
-    diagnosticPub_ =
-        this->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("elevation_mapping_node/diagnostics", 1);
+
+    updater_ = std::make_shared<diagnostic_updater::Updater>(this);
+    updater_->setHardwareID("elevation_mapping");
+    updater_->add("status", this, &ElevationMappingNode::diagnosticTask);
+    if (publishStatisticsFps > 0.0)
+    {
+        updater_->setPeriod(1.0 / publishStatisticsFps);
+    }
 
     gridMap_.setFrameId(mapFrameId_);
 
@@ -346,12 +355,6 @@ ElevationMappingNode::ElevationMappingNode(const rclcpp::NodeOptions& options)
         double duration = 1.0 / (updateGridMapFps + 0.00001);
         updateGridMapTimer_ = this->create_wall_timer(std::chrono::duration<double>(duration),
                                                       std::bind(&ElevationMappingNode::updateGridMap, this));
-    }
-    if (publishStatisticsFps > 0)
-    {
-        double duration = 1.0 / (publishStatisticsFps + 0.00001);
-        publishStatisticsTimer_ = this->create_wall_timer(std::chrono::duration<double>(duration),
-                                                          std::bind(&ElevationMappingNode::publishStatistics, this));
     }
     lastStatisticsPublishedTime_ = this->now();
     RCLCPP_INFO(this->get_logger(), "[ElevationMappingCupy] finish initialization");
@@ -409,7 +412,8 @@ void ElevationMappingNode::publishMapOfIndex(int index)
     auto start = std::chrono::high_resolution_clock::now();
     if (!isGridmapUpdated_)
     {
-        if (enableStatistics_) {
+        if (enableStatistics_)
+        {
             std::lock_guard<std::mutex> lock(diagnosticsMutex_);
             auto end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> diff = end - start;
@@ -445,7 +449,8 @@ void ElevationMappingNode::publishMapOfIndex(int index)
         }
         if (layers.empty())
         {
-            if (enableStatistics_) {
+            if (enableStatistics_)
+            {
                 std::lock_guard<std::mutex> lock(diagnosticsMutex_);
                 auto end = std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double> diff = end - start;
@@ -462,7 +467,8 @@ void ElevationMappingNode::publishMapOfIndex(int index)
     msg.basic_layers = map_basic_layers_[index];
     mapPubs_[index]->publish(msg);
 
-    if (enableStatistics_) {
+    if (enableStatistics_)
+    {
         std::lock_guard<std::mutex> lock(diagnosticsMutex_);
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
@@ -611,7 +617,8 @@ void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2::
     RCLCPP_DEBUG(this->get_logger(), "positionError: %f ", positionError);
     RCLCPP_DEBUG(this->get_logger(), "orientationError: %f ", orientationError);
 
-    if (enableStatistics_) {
+    if (enableStatistics_)
+    {
         std::lock_guard<std::mutex> lock(diagnosticsMutex_);
         processingAccumulatedTime_["inputPointCloud"] += diff.count();
         processingCounter_["inputPointCloud"]++;
@@ -710,7 +717,8 @@ void ElevationMappingNode::inputImage(const sensor_msgs::msg::Image::ConstShared
                       transformationMapToSensor.translation(), cameraMatrix, distortionCoeffs, distortion_model,
                       image.rows, image.cols);
 
-    if (enableStatistics_) {
+    if (enableStatistics_)
+    {
         std::lock_guard<std::mutex> lock(diagnosticsMutex_);
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
@@ -756,12 +764,13 @@ void ElevationMappingNode::updatePose()
     geometry_msgs::msg::TransformStamped transformStamped;
     const auto& timeStamp = this->now();
     Eigen::Affine3d transformationBaseToMap;
-    
+
     // Measure TF lookup time
     auto start_tf = std::chrono::high_resolution_clock::now();
     try
     {
-        transformStamped = tfBuffer_->lookupTransform(mapFrameId_, baseFrameId_, tf2::TimePointZero, tf2::durationFromSec(1.0));
+        transformStamped =
+            tfBuffer_->lookupTransform(mapFrameId_, baseFrameId_, tf2::TimePointZero, tf2::durationFromSec(1.0));
         transformationBaseToMap = tf2::transformToEigen(transformStamped);
     } catch (tf2::TransformException& ex)
     {
@@ -774,7 +783,7 @@ void ElevationMappingNode::updatePose()
     // creating artifacts.
     Eigen::Vector3d position(transformStamped.transform.translation.x, transformStamped.transform.translation.y,
                              transformStamped.transform.translation.z);
-    
+
     // Measure move_to time
     auto start_move = std::chrono::high_resolution_clock::now();
     map_->move_to(position, transformationBaseToMap.rotation().transpose());
@@ -799,19 +808,20 @@ void ElevationMappingNode::updatePose()
         useInitializerAtStart_ = false;
     }
 
-    if (enableStatistics_) {
+    if (enableStatistics_)
+    {
         std::lock_guard<std::mutex> lock(diagnosticsMutex_);
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
         std::chrono::duration<double> diff_tf = end_tf - start_tf;
         std::chrono::duration<double> diff_move = end_move - start_move;
-        
+
         processingAccumulatedTime_["updatePose"] += diff.count();
         processingCounter_["updatePose"]++;
-        
+
         processingAccumulatedTime_["updatePose_tf"] += diff_tf.count();
         processingCounter_["updatePose_tf"]++;
-        
+
         processingAccumulatedTime_["updatePose_move"] += diff_move.count();
         processingCounter_["updatePose_move"]++;
     }
@@ -1019,59 +1029,44 @@ void ElevationMappingNode::updateVariance() { map_->update_variance(); }
 
 void ElevationMappingNode::updateTime() { map_->update_time(); }
 
-void ElevationMappingNode::publishStatistics()
+void ElevationMappingNode::diagnosticTask(diagnostic_updater::DiagnosticStatusWrapper& status)
 {
     auto now = this->now();
     double dt = (now - lastStatisticsPublishedTime_).seconds();
     lastStatisticsPublishedTime_ = now;
 
-    // Diagnostics
-    diagnostic_msgs::msg::DiagnosticArray diag_array;
-    diag_array.header.stamp = now;
-
-    diagnostic_msgs::msg::DiagnosticStatus status;
-    status.name = "ElevationMappingNode";
-    status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
-    status.message = "OK";
+    status.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "OK");
 
     // Add pointcloud_process_fps to diagnostics
-    diagnostic_msgs::msg::KeyValue fps_kv;
-    fps_kv.key = "pointcloud_process_fps";
     if (dt > 0.0)
     {
-        fps_kv.value = std::to_string(pointCloudProcessCounter_ / dt);
+        status.add("pointcloud_process_fps", std::to_string(pointCloudProcessCounter_ / dt));
     }
     else
     {
-        fps_kv.value = "0.0";
+        status.add("pointcloud_process_fps", "0.0");
     }
-    status.values.push_back(fps_kv);
     pointCloudProcessCounter_ = 0;
 
     {
         std::lock_guard<std::mutex> lock(diagnosticsMutex_);
         for (auto const& [key, val] : processingAccumulatedTime_)
         {
-            diagnostic_msgs::msg::KeyValue kv;
-            kv.key = key + "_avg_time_ms";
             int count = processingCounter_[key];
             if (count > 0)
             {
-                kv.value = std::to_string((val / count) * 1000.0);
+                status.add(key + "_avg_time_ms", std::to_string((val / count) * 1000.0));
             }
             else
             {
-                kv.value = "0.0";
+                status.add(key + "_avg_time_ms", "0.0");
             }
-            status.values.push_back(kv);
 
             // Reset
             processingAccumulatedTime_[key] = 0.0;
             processingCounter_[key] = 0;
         }
     }
-    diag_array.status.push_back(status);
-    diagnosticPub_->publish(diag_array);
 }
 
 void ElevationMappingNode::updateGridMap()
@@ -1094,7 +1089,8 @@ void ElevationMappingNode::updateGridMap()
     }
     isGridmapUpdated_ = true;
 
-    if (enableStatistics_) {
+    if (enableStatistics_)
+    {
         std::lock_guard<std::mutex> lock(diagnosticsMutex_);
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = end - start;
