@@ -885,6 +885,10 @@ bool ElevationMappingNode::getSubmap(const std::shared_ptr<grid_map_msgs::srv::G
     {
         subMap = subMap.getTransformedMap(transformationOdomToMap, "elevation", requestedFrameId);
     }
+    if (subMap.getFrameId().empty())
+    {
+        subMap.setFrameId(requestedFrameId.empty() ? mapFrameId_ : requestedFrameId);
+    }
 
     if (request->layers.empty())
     {
