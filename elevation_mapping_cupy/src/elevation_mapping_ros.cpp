@@ -209,6 +209,22 @@ ElevationMappingNode::ElevationMappingNode(const rclcpp::NodeOptions& options)
                 channels_[key].push_back("y");
                 channels_[key].push_back("z");
 
+                // Optional: rewrite the incoming cloud's header.frame_id before processing.
+                // Empty string (or unset) = pass-through. Used in v2 to retarget the cloud
+                // onto the *_3d TF subtree without spawning a republisher.
+                // Cupy enables automatically_declare_parameters_from_overrides — yaml-set
+                // params are pre-declared, so just get; default to "" when unset.
+                std::string override_frame_id;
+                this->get_parameter_or("subscribers." + sub_name + ".override_frame_id",
+                                       override_frame_id, std::string(""));
+                override_frame_id_[key] = override_frame_id;
+                if (!override_frame_id.empty())
+                {
+                    RCLCPP_INFO(this->get_logger(),
+                                "Subscriber '%s': will override cloud frame_id -> '%s'",
+                                key.c_str(), override_frame_id.c_str());
+                }
+
                 // point_cloud_transport::Subscriber pct_sub = pct.subscribe(
                 //     "pct/point_cloud", 100,
                 //     [node](const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg)
@@ -509,6 +525,17 @@ void ElevationMappingNode::imageChannelCallback(const elevation_map_msgs::msg::C
 void ElevationMappingNode::pointcloudtransportCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud,
                                                        const std::string& key)
 {
+    // Optional in-place frame_id rewrite (subscribers.<key>.override_frame_id).
+    // Same trick the CPU mapper uses; avoids the CPU cost of a republisher node.
+    // const_pointer_cast is safe in context because elevation_mapping_node is the
+    // sole in-process consumer of this subscription's messages.
+    auto override_it = override_frame_id_.find(key);
+    if (override_it != override_frame_id_.end() && !override_it->second.empty())
+    {
+        std::const_pointer_cast<sensor_msgs::msg::PointCloud2>(cloud)->header.frame_id =
+            override_it->second;
+    }
+
     //  get channels
     auto fields = cloud->fields;
     std::vector<std::string> channels;

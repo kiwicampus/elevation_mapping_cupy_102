@@ -212,6 +212,12 @@ class ElevationMappingNode : public rclcpp::Node
     std::set<double> map_fps_unique_;
     std::vector<rclcpp::TimerBase::SharedPtr> mapTimers_;
     std::map<std::string, std::vector<std::string>> channels_;
+    // Per-subscription override for the incoming pointcloud's header.frame_id.
+    // When non-empty, the callback rewrites cloud->header.frame_id in place before
+    // forwarding to inputPointCloud. Same trick the CPU mapper exposes; avoids the
+    // CPU cost of a republisher node when the v2 stack needs the *_3d frame instead
+    // of the URDF-default cloud frame.
+    std::map<std::string, std::string> override_frame_id_;
 
     std::vector<std::string> initialize_frame_id_;
     std::vector<double> initialize_tf_offset_;
