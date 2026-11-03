@@ -47,6 +47,7 @@ find_package(tf2_eigen REQUIRED)
 find_package(python_cmake_module REQUIRED)
 find_package(point_cloud_transport REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
+find_package(diagnostic_updater REQUIRED)
 
 # List dependencies for ament_target_dependencies
 set(dependencies
@@ -66,6 +67,7 @@ set(dependencies
   tf2_eigen
   point_cloud_transport
   diagnostic_msgs
+  diagnostic_updater
 )
 
 # Include directories
